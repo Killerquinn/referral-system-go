@@ -24,7 +24,7 @@ type Config struct {
 
 type ServerConfig struct {
 	Port string `koanf:"port"`
-	Env  string `koanf:"env"`
+	Env  string `koanf:"env"` // development, production, local
 	Name string `koanf:"name"`
 }
 
