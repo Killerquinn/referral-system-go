@@ -2,10 +2,12 @@ package config
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
 	"github.com/knadh/koanf/parsers/dotenv"
+	"github.com/knadh/koanf/providers/env"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
 )
@@ -44,9 +46,8 @@ type JaegerConfig struct {
 	Sampler  float64 `koanf:"sampler" default:"1.0"`
 }
 
-func LoadConfig() Config {
+func LoadConfig() *Config {
 	k = koanf.New(".")
-	var resp string
 	if err := k.Load(file.Provider(".env"), dotenv.Parser()); err != nil {
 		fmt.Println("Error loading config, .env files not found, continue? (y/n)", err)
 		if !AskToContinue("Continue config loading without .env variables?") {
@@ -55,8 +56,36 @@ func LoadConfig() Config {
 		}
 		fmt.Println("Continuing loading without .env variables...")
 	}
+	if err := k.Load(env.Provider("APP_", ".", func(s string) string {
+		return strings.ReplaceAll(strings.ToLower(strings.TrimPrefix(s, "APP_")), "_", ".")
+	}), nil); err != nil {
+		log.Fatal(err)
+	}
 
-	return Config{}
+	var cfg Config
+
+	if err := k.Unmarshal("", &cfg); err != nil {
+		log.Fatal(err)
+	}
+
+	if cfg.Server.Port == "" {
+		log.Println("No port specified, defaulting to 8080")
+		cfg.Server.Port = "8080"
+	}
+	if cfg.Server.Env == "" {
+		cfg.Server.Env = "development"
+		fmt.Println("No environment specified, defaulting to development")
+	}
+	if cfg.Server.Name == "" {
+		cfg.Server.Name = "local_project"
+		fmt.Println("No name specified, defaulting to local_project")
+	}
+
+	return &cfg
+}
+
+func Get(key string) interface{} {
+	return k.String(key)
 }
 
 func AskToContinue(sentence string) bool {
