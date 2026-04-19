@@ -1,7 +1,11 @@
 package main
 
 import (
+	"context"
+	"os"
+
 	"github.com/killerquinn/referral-system-go/internal/config"
+	"github.com/killerquinn/referral-system-go/internal/infrastructure/database"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -18,6 +22,23 @@ func main() {
 	log := LoggerSetup(cfg.Server.Env)
 	log.Info("Starting server...")
 	log.Info("logger and config loaded")
+
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	//load postgres
+	postgres, err := database.NewPool(cfg)
+	if err != nil {
+		log.Error("failed to create postgres pool", zap.Error(err))
+		os.Exit(1)
+	}
+	defer func(postgres *database.Postgres) {
+		err := postgres.Close()
+		if err != nil {
+			log.Error("failed to close postgres pool", zap.Error(err))
+		}
+	}(postgres)
+
+	//start server
 
 }
 

@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/knadh/koanf/parsers/dotenv"
 	"github.com/knadh/koanf/providers/env"
@@ -29,11 +30,12 @@ type ServerConfig struct {
 }
 
 type PostgresConfig struct {
-	DSN                       string `koanf:"dsn"`
-	MaxConnections            int    `koanf:"max_connections" default:"20"`
-	MinConnections            int    `koanf:"min_connections" default:"5"`
-	MaxConnectionLifetime     int    `koanf:"max_connection_lifetime" default:"1h"`
-	MaxConnectionIdleLifetime int    `koanf:"max_connection_idle_time" default:"30m"`
+	DSN                       string        `koanf:"dsn"`
+	MaxConnections            int           `koanf:"max_connections" default:"20"`
+	MinConnections            int           `koanf:"min_connections" default:"5"`
+	MaxConnectionLifetime     time.Duration `koanf:"max_connection_lifetime" default:"1h"`
+	MaxConnectionIdleLifetime time.Duration `koanf:"max_connection_idle_time" default:"30m"`
+	HealthCheckPeriod         time.Duration `koanf:"health_check_period" default:"10s"`
 }
 
 type StripeConfig struct {
