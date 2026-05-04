@@ -24,9 +24,13 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Port string `koanf:"port"`
-	Env  string `koanf:"env"` // development, production, local
-	Name string `koanf:"name"`
+	Port              string        `koanf:"port"`
+	Env               string        `koanf:"env"` // development, production, local
+	Name              string        `koanf:"name"`
+	ReadTimeout       time.Duration `koanf:"read_timeout" default:"5s"`
+	ReadHeaderTimeout time.Duration `koanf:"read_header_timeout" default:"5s"`
+	IdleTimeout       time.Duration `koanf:"idle_timeout" default:"5s"`
+	WriteTimeout      time.Duration `koanf:"write_timeout" default:"5s"`
 }
 
 type PostgresConfig struct {
