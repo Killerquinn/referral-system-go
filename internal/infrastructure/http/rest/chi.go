@@ -23,8 +23,9 @@ func NewApp(log *zap.Logger, cfg *config.Config) *App {
 
 	log.Info("adding middleware")
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
+	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+ r.Use(middleware.RealIP)
 
 	log.Info("setup server")
 
