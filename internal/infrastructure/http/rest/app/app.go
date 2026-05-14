@@ -12,7 +12,7 @@ import (
 )
 
 type App struct {
-	Router *chi.Router
+	RestApp rest.App
 }
 
 func New(logger *zap.Logger, port int, tokenTTL time.Duration, cfg *config.Config) *App {
