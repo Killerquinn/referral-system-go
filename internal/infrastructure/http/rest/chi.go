@@ -22,10 +22,18 @@ func NewApp(log *zap.Logger, cfg *config.Config) *App {
 	r := chi.NewRouter()
 
 	log.Info("adding middleware")
+
+//middlewares
+
 	r.Use(middleware.RequestID)
+
 	r.Use(middleware.Logger)
+
 	r.Use(middleware.Recoverer)
+
  r.Use(middleware.RealIP)
+
+
 
 	log.Info("setup server")
 
