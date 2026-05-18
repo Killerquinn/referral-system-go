@@ -37,7 +37,7 @@ func main() {
 			log.Error("failed to close postgres pool", zap.Error(err))
 		}
 	}(postgres)
-
+	
 	//start server
 
 }

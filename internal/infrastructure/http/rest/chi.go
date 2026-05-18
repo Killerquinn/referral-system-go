@@ -9,6 +9,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/killerquinn/referral-system-go/internal/config"
+	httphandler "github.com/killerquinn/referral-system-go/internal/features/auth/http-handler"
+	"github.com/killerquinn/referral-system-go/internal/features/auth/service"
 	"go.uber.org/zap"
 )
 
@@ -18,7 +20,7 @@ type App struct {
 	port   string
 }
 
-func NewApp(log *zap.Logger, cfg *config.Config) *App {
+func NewApp(log *zap.Logger, cfg *config.Config, auth *service.Auth) *App {
 	r := chi.NewRouter()
 
 	log.Info("adding middleware")
@@ -45,6 +47,8 @@ func NewApp(log *zap.Logger, cfg *config.Config) *App {
 		IdleTimeout:       5 * time.Second,
 		WriteTimeout:      5 * time.Second,
 	}
+
+	httphandler.Register(r, auth)
 
 	return &App{
 		server: server,

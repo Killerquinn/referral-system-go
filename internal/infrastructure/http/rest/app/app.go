@@ -3,21 +3,27 @@ package app
 import (
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/killerquinn/referral-system-go/internal/config"
-	"github.com/killerquinn/referral-system-go/internal/features/user"
+	repopackage "github.com/killerquinn/referral-system-go/internal/features/auth/repo"
+	service "github.com/killerquinn/referral-system-go/internal/features/auth/service"
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/http/rest"
-	v1 "github.com/killerquinn/referral-system-go/internal/infrastructure/http/v1"
 	"go.uber.org/zap"
 )
 
 type App struct {
-	Router *chi.Router
+	RestServer *rest.App
 }
 
 func New(logger *zap.Logger, port int, tokenTTL time.Duration, cfg *config.Config) *App {
 	const op = "New"
-	restApp := rest.NewApp(logger, cfg)
 
-	return &App{}
+	storage := repopackage.New(cfg.Postgres.DSN)
+
+	authService := service.New(logger, storage)
+
+	app := rest.NewApp(logger, cfg, authService)
+
+	return &App{
+		RestServer: app,
+	}
 }
