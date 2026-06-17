@@ -2,10 +2,15 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/killerquinn/referral-system-go/internal/config"
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/database"
+	"github.com/killerquinn/referral-system-go/internal/infrastructure/http/rest/app"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -37,9 +42,32 @@ func main() {
 			log.Error("failed to close postgres pool", zap.Error(err))
 		}
 	}(postgres)
-	
+
 	//start server
 
+	application := app.New(log, cfg.Server.Port, time.Minute*15, cfg)
+	go func() {
+		if err := application.RestServer.Run(log); err != nil {
+			log.Fatal("server didn't start for some reason... : ", zap.Error(err))
+		}
+	}()
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+	//graceful shutdown
+
+	stop := make(chan os.Signal, 1)
+
+	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+
+	siginfo := <-stop
+
+	log.Info(fmt.Sprintf("application shutdowns on port %v, with syscall %v", cfg.Server.Port, siginfo.String()))
+
+	application.RestServer.Shutdown(log, shutdownCtx)
+
+	log.Info("database will close just after closing main")
+
+	log.Info("app is closed successfully")
 }
 
 func LoggerSetup(env string) *zap.Logger {

@@ -24,7 +24,7 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Port              string        `koanf:"port"`
+	Port              int           `koanf:"port"`
 	Env               string        `koanf:"env"` // development, production, local
 	Name              string        `koanf:"name"`
 	ReadTimeout       time.Duration `koanf:"read_timeout" default:"5s"`
@@ -74,9 +74,9 @@ func LoadConfig() *Config {
 		log.Fatal(err)
 	}
 
-	if cfg.Server.Port == "" {
+	if cfg.Server.Port == 0 {
 		log.Println("No port specified, defaulting to 8080")
-		cfg.Server.Port = "8080"
+		cfg.Server.Port = 8080
 	}
 	if cfg.Server.Env == "" {
 		cfg.Server.Env = "development"

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -25,7 +26,7 @@ func NewApp(log *zap.Logger, cfg *config.Config, auth *service.Auth) *App {
 
 	log.Info("adding middleware")
 
-//middlewares
+	//middlewares
 
 	r.Use(middleware.RequestID)
 
@@ -33,14 +34,13 @@ func NewApp(log *zap.Logger, cfg *config.Config, auth *service.Auth) *App {
 
 	r.Use(middleware.Recoverer)
 
- r.Use(middleware.RealIP)
-
-
+	r.Use(middleware.RealIP)
 
 	log.Info("setup server")
+	port := strconv.Itoa(cfg.Server.Port)
 
 	server := &http.Server{
-		Addr:              cfg.Server.Port,
+		Addr:              port,
 		Handler:           r,
 		ReadTimeout:       5 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,
@@ -53,7 +53,7 @@ func NewApp(log *zap.Logger, cfg *config.Config, auth *service.Auth) *App {
 	return &App{
 		server: server,
 		router: r,
-		port:   cfg.Server.Port,
+		port:   port,
 	}
 }
 
