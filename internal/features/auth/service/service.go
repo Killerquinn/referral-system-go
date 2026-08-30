@@ -12,7 +12,7 @@ type Auth struct {
 }
 
 type UserAuth interface {
-	UserExists(email string) (bool, error)
+	UserExists(ctx context.Context, email string) (bool, error)
 }
 
 func New(

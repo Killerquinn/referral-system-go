@@ -2,6 +2,7 @@ package repopackage
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -43,6 +44,25 @@ func (db *Repository) GetConn() (*pgxpool.Conn, error) {
 	return conn, err
 }
 
-func (db *Repository) UserExists(email string) (bool, error) {
-	panic("implement")
+func (db *Repository) UserExists(ctx context.Context, email string) (bool, error) {
+	const op = "user/repo.UserExist"
+
+	conn, err := db.GetConn()
+	if err != nil {
+		return true, fmt.Errorf("%s:%w", op, err)
+	}
+	defer conn.Release()
+
+	var isUserExist bool
+
+	err = conn.QueryRow(ctx, selectIfUserExist).Scan(&isUserExist)
+	if err != nil {
+		return true, fmt.Errorf("%s:%w", op, err)
+	}
+
+	if isUserExist {
+		return true, fmt.Errorf("user with that email already exist")
+	}
+
+	return false, nil
 }

@@ -1,0 +1,5 @@
+DROP TABLE IF EXISTS giveaway_attendee;
+DROP TABLE IF EXISTS giveaways;
+DROP TABLE IF EXISTS referrals;
+DROP TABLE IF EXISTS users;
+DROP EXTENSION IF EXISTS "uuid_ossp";
