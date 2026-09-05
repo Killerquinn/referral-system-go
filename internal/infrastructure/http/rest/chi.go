@@ -12,6 +12,7 @@ import (
 	"github.com/killerquinn/referral-system-go/internal/config"
 	httphandler "github.com/killerquinn/referral-system-go/internal/features/auth/http-handler"
 	"github.com/killerquinn/referral-system-go/internal/features/auth/service"
+	localmdw "github.com/killerquinn/referral-system-go/internal/infrastructure/http/middleware"
 	"go.uber.org/zap"
 )
 
@@ -35,6 +36,10 @@ func NewApp(log *zap.Logger, cfg *config.Config, auth *service.Auth) *App {
 	r.Use(middleware.Recoverer)
 
 	r.Use(middleware.RealIP)
+
+	r.Group(func(r chi.Router) {
+		r.Use(localmdw.AuthMiddleware(cfg.JWT.Secret))
+	})
 
 	log.Info("setup server")
 	port := strconv.Itoa(cfg.Server.Port)

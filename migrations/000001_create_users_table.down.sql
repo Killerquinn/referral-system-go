@@ -1,4 +1,5 @@
 DROP TABLE IF EXISTS giveaway_attendee;
 DROP TABLE IF EXISTS giveaways;
 DROP TABLE IF EXISTS referrals;
+DROP TABLE IF EXISTS user_sessions;
 DROP TABLE IF EXISTS users;

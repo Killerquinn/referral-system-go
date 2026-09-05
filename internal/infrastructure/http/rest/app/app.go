@@ -19,9 +19,14 @@ func New(logger *zap.Logger, port int, tokenTTL time.Duration, cfg *config.Confi
 
 	storage := repopackage.New(cfg.Postgres.DSN)
 
+	secret := cfg.JWT.Secret
+
 	authService := service.New(logger,
+		[]byte(secret),
+		tokenTTL,
 		storage, // userAuth interface
 		storage, // newUser interface
+		storage, // session interface
 	)
 
 	app := rest.NewApp(logger, cfg, authService)

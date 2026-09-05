@@ -2,11 +2,16 @@ package repopackage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
+	"time"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/killerquinn/referral-system-go/internal/domain/auth"
 )
 
 type Repository struct {
@@ -43,6 +48,33 @@ func (r *Repository) GetConn() (*pgxpool.Conn, error) {
 	}
 
 	return conn, err
+}
+
+func (r *Repository) User(ctx context.Context, email string) (*auth.User, error) {
+	const op = "user/repo.User"
+
+	conn, err := r.GetConn()
+	if err != nil {
+		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+
+	defer conn.Release()
+
+	rows, err := conn.Query(ctx, getUserByEmail, email)
+	if err != nil {
+		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+	defer rows.Close()
+
+	user, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[auth.User])
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("%s:%s", op, "errUserNotFound")
+		}
+		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+
+	return &user, nil
 }
 
 func (r *Repository) UserExists(ctx context.Context, email string) (bool, error) {
@@ -89,4 +121,15 @@ func (r *Repository) SaveNewUser(ctx context.Context, username string, email str
 
 	return id, nil
 
+}
+
+func (r *Repository) CreateSession(ctx context.Context, userID uuid.UUID, hashedRefreshToken string, userAgent string, clientIP string, expiresAt time.Time) (refreshToken []byte, err error) {
+	const op = "user/repo.LoginUser"
+
+	conn, err := r.GetConn()
+	if err != nil {
+		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+	defer conn.Release()
+	panic("")
 }

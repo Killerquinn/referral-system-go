@@ -21,6 +21,7 @@ type Config struct {
 	Stripe   StripeConfig
 	Jaeger   JaegerConfig
 	//Prometheus PrometheusConfig
+	JWT JWTokenConfig
 }
 
 type ServerConfig struct {
@@ -50,6 +51,11 @@ type StripeConfig struct {
 type JaegerConfig struct {
 	Endpoint string
 	Sampler  float64 `koanf:"sampler" default:"1.0"`
+}
+
+type JWTokenConfig struct {
+	Secret string //To-Do: make tokenizer!
+	TTL    time.Time
 }
 
 func LoadConfig() *Config {

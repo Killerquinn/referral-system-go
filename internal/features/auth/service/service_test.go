@@ -1,130 +1,168 @@
-package service
+package service_test
 
 import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/killerquinn/referral-system-go/internal/domain/auth"
+	"github.com/killerquinn/referral-system-go/internal/features/auth/service"
 )
 
-type MockUserAuth struct {
-	mock.Mock
+// --- Mocks ---
+
+type mockUserAuth struct {
+	exists bool
+	err    error
 }
 
-func (m *MockUserAuth) UserExists(ctx context.Context, email string) (bool, error) {
-	args := m.Called(ctx, email)
-	return args.Bool(0), args.Error(1)
+func (m mockUserAuth) UserExists(ctx context.Context, email string) (bool, error) {
+	return m.exists, m.err
 }
 
-type MockNewUser struct {
-	mock.Mock
+type mockSessionRegister struct {
+	token []byte
+	err   error
 }
 
-func (m *MockNewUser) SaveNewUser(ctx context.Context, username string, email string, password []byte) (string, error) {
-	args := m.Called(ctx, username, email, password)
-	return args.String(0), args.Error(1)
+func (m mockSessionRegister) CreateSession(ctx context.Context, userID uuid.UUID, hashedRefreshToken string, userAgent string, clientIP string, expiresAt time.Time) ([]byte, error) {
+	return m.token, m.err
 }
+
+type mockNewUser struct {
+	user        *auth.User
+	userErr     error
+	savedUserID string
+	saveErr     error
+}
+
+func (m mockNewUser) User(ctx context.Context, email string) (*auth.User, error) {
+	return m.user, m.userErr
+}
+
+func (m mockNewUser) SaveNewUser(ctx context.Context, username string, email string, password []byte) (string, error) {
+	return m.savedUserID, m.saveErr
+}
+
+// --- Tests ---
 
 func TestRegisterUser(t *testing.T) {
-	var (
-		ctx      = context.Background()
-		username = "john_doe"
-		email    = "john@example.com"
-		password = "secretpassword"
-	)
+	logger := zap.NewNop()
+	secret := []byte("secret")
+	ttl := 30 * 24 * time.Hour
 
-	tests := []struct {
-		name        string
-		username    string
-		email       string
-		password    string
-		setupMocks  func(mAuth *MockUserAuth, mNewUser *MockNewUser)
-		expectedID  string
-		expectedErr string
-		expectErr   bool
-	}{
-		{
-			name:     "Success registration",
-			username: username,
-			email:    email,
-			password: password,
-			setupMocks: func(mAuth *MockUserAuth, mNewUser *MockNewUser) {
-				mAuth.On("UserExists", ctx, email).Return(false, nil)
+	t.Run("success", func(t *testing.T) {
+		authSrv := service.New(
+			logger,
+			secret,
+			ttl,
+			mockUserAuth{exists: false},
+			mockSessionRegister{},
+			mockNewUser{savedUserID: "uuid-123"},
+		)
 
-				mNewUser.On("SaveNewUser", ctx, username, email, mock.MatchedBy(func(hashed []byte) bool {
-					err := bcrypt.CompareHashAndPassword(hashed, []byte(password))
-					return err == nil
-				})).Return("usr_12345", nil)
-			},
-			expectedID: "usr_12345",
-			expectErr:  false,
-		},
-		{
-			name:     "User already exists",
-			username: username,
-			email:    email,
-			password: password,
-			setupMocks: func(mAuth *MockUserAuth, mNewUser *MockNewUser) {
-				mAuth.On("UserExists", ctx, email).Return(true, nil)
-			},
-			expectedID:  "",
-			expectedErr: "user already exist",
-			expectErr:   true,
-		},
-		{
-			name:     "Error on UserExists DB call",
-			username: username,
-			email:    email,
-			password: password,
-			setupMocks: func(mAuth *MockUserAuth, mNewUser *MockNewUser) {
-				mAuth.On("UserExists", ctx, email).Return(false, errors.New("db connection timeout"))
-			},
-			expectedID:  "",
-			expectedErr: "auth/service.registernewuser:db connection timeout",
-			expectErr:   true,
-		},
-		{
-			name:     "Error on SaveNewUser DB call",
-			username: username,
-			email:    email,
-			password: password,
-			setupMocks: func(mAuth *MockUserAuth, mNewUser *MockNewUser) {
-				mAuth.On("UserExists", ctx, email).Return(false, nil)
-				mNewUser.On("SaveNewUser", ctx, username, email, mock.Anything).
-					Return("", errors.New("unique constraint violation"))
-			},
-			expectedID:  "",
-			expectedErr: "auth/service.registernewuser:unique constraint violation",
-			expectErr:   true,
-		},
+		id, err := authSrv.RegisterUser(context.Background(), "artem", "artem@example.com", "pass123")
+
+		require.NoError(t, err)
+		assert.Equal(t, "uuid-123", id)
+	})
+
+	t.Run("user_already_exists", func(t *testing.T) {
+		authSrv := service.New(
+			logger,
+			secret,
+			ttl,
+			mockUserAuth{exists: true},
+			mockSessionRegister{},
+			mockNewUser{},
+		)
+
+		_, err := authSrv.RegisterUser(context.Background(), "artem", "artem@example.com", "pass123")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "user already exist")
+	})
+
+	t.Run("db_error", func(t *testing.T) {
+		authSrv := service.New(
+			logger,
+			secret,
+			ttl,
+			mockUserAuth{err: errors.New("db error")},
+			mockSessionRegister{},
+			mockNewUser{},
+		)
+
+		_, err := authSrv.RegisterUser(context.Background(), "artem", "artem@example.com", "pass123")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "db error")
+	})
+}
+
+func TestLogin(t *testing.T) {
+	logger := zap.NewNop()
+	secret := []byte("secret")
+	ttl := 30 * 24 * time.Hour
+
+	passHash, _ := bcrypt.GenerateFromPassword([]byte("correct_password"), bcrypt.DefaultCost)
+	validUser := &auth.User{
+		ID:             uuid.New(),
+		HashedPassword: passHash,
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mAuth := new(MockUserAuth)
-			mNewUser := new(MockNewUser)
+	t.Run("user_not_found", func(t *testing.T) {
+		authSrv := service.New(
+			logger,
+			secret,
+			ttl,
+			mockUserAuth{exists: false},
+			mockSessionRegister{},
+			mockNewUser{},
+		)
 
-			tt.setupMocks(mAuth, mNewUser)
+		_, _, err := authSrv.Login(context.Background(), "notfound@example.com", "pass", "agent", "127.0.0.1")
 
-			authService := New(zap.NewNop(), mAuth, mNewUser)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "user doesnt even exist!")
+	})
 
-			id, err := authService.RegisterUser(ctx, tt.username, tt.email, tt.password)
+	t.Run("invalid_credentials", func(t *testing.T) {
+		authSrv := service.New(
+			logger,
+			secret,
+			ttl,
+			mockUserAuth{exists: true},
+			mockSessionRegister{},
+			mockNewUser{user: validUser},
+		)
 
-			if tt.expectErr {
-				assert.Error(t, err)
-				assert.EqualError(t, err, tt.expectedErr)
-				assert.Empty(t, id)
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, tt.expectedID, id)
-			}
+		_, _, err := authSrv.Login(context.Background(), "artem@example.com", "wrong_password", "agent", "127.0.0.1")
 
-			mAuth.AssertExpectations(t)
-			mNewUser.AssertExpectations(t)
-		})
-	}
+		require.Error(t, err)
+		assert.EqualError(t, err, "invalid credentials")
+	})
+
+	t.Run("session_creation_failed", func(t *testing.T) {
+		authSrv := service.New(
+			logger,
+			secret,
+			ttl,
+			mockUserAuth{exists: true},
+			mockSessionRegister{err: errors.New("db write failed")},
+			mockNewUser{user: validUser},
+		)
+
+		_, _, err := authSrv.Login(context.Background(), "artem@example.com", "correct_password", "agent", "127.0.0.1")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "db write failed")
+	})
 }
