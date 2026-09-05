@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -33,10 +34,10 @@ func New(dsn string) *Repository {
 	}
 }
 
-func (db *Repository) GetConn() (*pgxpool.Conn, error) {
+func (r *Repository) GetConn() (*pgxpool.Conn, error) {
 	const op = "user/repo.GetConn"
 
-	conn, err := db.db.Acquire(context.Background())
+	conn, err := r.db.Acquire(context.Background())
 	if err != nil {
 		log.Panicf("%s - %s", op, err)
 	}
@@ -44,10 +45,10 @@ func (db *Repository) GetConn() (*pgxpool.Conn, error) {
 	return conn, err
 }
 
-func (db *Repository) UserExists(ctx context.Context, email string) (bool, error) {
+func (r *Repository) UserExists(ctx context.Context, email string) (bool, error) {
 	const op = "user/repo.UserExist"
 
-	conn, err := db.GetConn()
+	conn, err := r.GetConn()
 	if err != nil {
 		return true, fmt.Errorf("%s:%w", op, err)
 	}
@@ -65,4 +66,27 @@ func (db *Repository) UserExists(ctx context.Context, email string) (bool, error
 	}
 
 	return false, nil
+}
+
+func (r *Repository) SaveNewUser(ctx context.Context, username string, email string, password []byte) (uid string, err error) {
+	const op = "user/repo.SaveNewUser"
+
+	conn, err := r.GetConn()
+	if err != nil {
+		return "", fmt.Errorf("%s:%w", op, err)
+	}
+	defer conn.Release()
+
+	var id string
+
+	err = conn.QueryRow(ctx, createUserQuery, username, email, password).Scan(&id)
+	if err != nil {
+		if pgerr, ok := err.(*pgconn.PgError); ok && pgerr.Code == "23505" {
+			return "", fmt.Errorf("%s:%s", op, "user exists")
+		}
+		return "", fmt.Errorf("%s:failed to create user", op)
+	}
+
+	return id, nil
+
 }

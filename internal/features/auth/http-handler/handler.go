@@ -11,7 +11,7 @@ import (
 )
 
 type AuthService interface {
-	RegisterUser(ctx context.Context, username string, email string, password []byte) (userid string, err error)
+	RegisterUser(ctx context.Context, username string, email string, password string) (userid string, err error)
 }
 
 type HandlerRest struct {
