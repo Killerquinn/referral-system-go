@@ -10,6 +10,7 @@ import (
 	"github.com/killerquinn/referral-system-go/internal/domain/auth"
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/jwt"
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/refreshtoken"
+	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -68,7 +69,7 @@ func (auth *Auth) RegisterUser(ctx context.Context, username string, email strin
 		return "", fmt.Errorf("%s:%w", op, err)
 	}
 	if exist {
-		return "", fmt.Errorf("user already exist")
+		return "", sharederrors.ErrUserAlreadyRegistered
 	}
 
 	hashedPass, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -102,32 +103,36 @@ func (auth *Auth) Login(ctx context.Context, email string, password string, user
 
 	user, err := auth.newUser.User(ctx, email)
 	if err != nil {
-		if errors.Is(err, fmt.Errorf("errUserNotFound")) { //To-Do: add errors to shared
-			return "", "", fmt.Errorf("%s:%w", op, fmt.Errorf("errUserNotFound"))
+		if errors.Is(err, sharederrors.ErrUserNotFound) { //To-Do: add errors to shared
+			return "", "", sharederrors.ErrUserNotFound
 		}
 		return "", "", fmt.Errorf("%s:%w", op, err)
 	}
 	//To-Do: add comparing of user agent from DB to incoming request, to send warnings on users email that someone tries to log-in
 
 	if err = bcrypt.CompareHashAndPassword(user.HashedPassword, []byte(password)); err != nil {
-		return "", "", fmt.Errorf("invalid credentials")
+		return "", "", sharederrors.ErrInvalidCreds
 	}
 
 	refreshToken, err := refreshtoken.GenerateRefreshToken()
 	if err != nil {
 		return "", "", fmt.Errorf("%s:%w", op, err)
 	}
+
 	accessToken, err := jwt.GenerateAccessToken(user.ID.String(), string(auth.jwtsecret))
 	if err != nil {
 		return "", "", fmt.Errorf("%s:%w", op, err)
 	}
+
 	rToken, err := auth.sRegister.CreateSession(ctx, user.ID, string(refreshToken), userAgent, userIP, time.Now().Add(auth.tokenTTL))
 	if err != nil {
 		return "", "", fmt.Errorf("%s:%w", op, err)
 	}
+
 	preparedRToken, err := refreshtoken.UnhashToken(rToken)
 	if err != nil {
 		return "", "", fmt.Errorf("%s:%w", op, err)
 	}
+
 	return accessToken, preparedRToken, nil
 }

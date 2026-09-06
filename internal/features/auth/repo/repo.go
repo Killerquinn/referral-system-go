@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/killerquinn/referral-system-go/internal/domain/auth"
+	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
 )
 
 type Repository struct {
@@ -69,7 +70,7 @@ func (r *Repository) User(ctx context.Context, email string) (*auth.User, error)
 	user, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[auth.User])
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("%s:%s", op, "errUserNotFound")
+			return nil, sharederrors.ErrUserNotFound
 		}
 		return nil, fmt.Errorf("%s:%w", op, err)
 	}
@@ -114,7 +115,7 @@ func (r *Repository) SaveNewUser(ctx context.Context, username string, email str
 	err = conn.QueryRow(ctx, createUserQuery, username, email, password).Scan(&id)
 	if err != nil {
 		if pgerr, ok := err.(*pgconn.PgError); ok && pgerr.Code == "23505" {
-			return "", fmt.Errorf("%s:%s", op, "user exists")
+			return "", sharederrors.ErrUserAlreadyRegistered
 		}
 		return "", fmt.Errorf("%s:failed to create user", op)
 	}

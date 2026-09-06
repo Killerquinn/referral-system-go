@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/killerquinn/referral-system-go/internal/features/auth/dto"
+	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
 )
 
 type AuthService interface {
@@ -71,7 +72,7 @@ func (h *HandlerRest) UserLogIn(w http.ResponseWriter, r *http.Request) {
 
 	atoken, rtoken, err := h.service.Login(r.Context(), req.Email, req.Password, userAgent, ip)
 	if err != nil {
-		if errors.Is(err, ErrInvalidCreds) {
+		if errors.Is(err, sharederrors.ErrInvalidCreds) {
 			http.Error(w, "invalid credentials", http.StatusUnauthorized)
 			return
 		}
