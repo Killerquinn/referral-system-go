@@ -16,6 +16,7 @@ import (
 type AuthService interface {
 	RegisterUser(ctx context.Context, username string, email string, password string) (userid string, err error)
 	Login(ctx context.Context, email string, password string, userAgent string, userIP string) (actoken string, rtoken string, err error)
+	Logout(ctx context.Context, userID string) error
 }
 
 type HandlerRest struct {
@@ -31,6 +32,7 @@ func Register(r chi.Router, as AuthService) {
 
 	r.Post("/auth/register", h.RegisterNewUser)
 	r.Post("/auth/login", h.UserLogIn)
+	r.Delete("/auth/logout", h.UserLogOut)
 }
 
 var (
@@ -87,6 +89,31 @@ func (h *HandlerRest) UserLogIn(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+func (h *HandlerRest) UserLogOut(w http.ResponseWriter, r *http.Request) {
+	const op = "handler.Logout"
+
+	userID, ok := r.Context().Value("user_id").(string)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req dto.LogoutUserRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("%s:%s", op, "invalid body"), http.StatusBadRequest)
+		return
+	}
+
+	if err := h.service.Logout(r.Context(), userID); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(http.StatusOK)
+
 }
 
 func getClientIP(r *http.Request) string {

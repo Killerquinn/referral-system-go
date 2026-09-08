@@ -27,10 +27,12 @@ type Auth struct {
 type userAuth interface {
 	UserExists(ctx context.Context, email string) (bool, error)
 	//CredsMatch(ctx context.Context, email string, password []byte) (matched bool, err error) //To-Do: resolve that
+	UserIsBlocked(ctx context.Context, userID string) (bool, error)
 }
 
 type sessionRegister interface {
 	CreateSession(ctx context.Context, userID uuid.UUID, hashedRefreshToken string, userAgent string, clientIP string, expiresAt time.Time) (refreshToken []byte, err error)
+	DeleteCurrentSession(ctx context.Context, userID uuid.UUID) error
 }
 
 type newUser interface {
@@ -108,6 +110,15 @@ func (auth *Auth) Login(ctx context.Context, email string, password string, user
 		}
 		return "", "", fmt.Errorf("%s:%w", op, err)
 	}
+
+	blocked, err := auth.userAuth.UserIsBlocked(ctx, user.ID.String())
+	if err != nil {
+		return "", "", fmt.Errorf("Cannot get user status")
+	}
+	if blocked {
+		return "", "", fmt.Errorf("User is currently blocked")
+	}
+
 	//To-Do: add comparing of user agent from DB to incoming request, to send warnings on users email that someone tries to log-in
 
 	if err = bcrypt.CompareHashAndPassword(user.HashedPassword, []byte(password)); err != nil {
@@ -135,4 +146,27 @@ func (auth *Auth) Login(ctx context.Context, email string, password string, user
 	}
 
 	return accessToken, preparedRToken, nil
+}
+
+func (auth *Auth) Logout(ctx context.Context, userID string) error {
+	const op = "auth/service.Logout"
+
+	log := auth.log.With(
+		zap.String(op, "trying to logout user"),
+	)
+
+	log.Info("preparing to delete a current user's session")
+
+	uuID, err := uuid.Parse(userID)
+	if err != nil {
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	if err = auth.sRegister.DeleteCurrentSession(ctx, uuID); err != nil {
+		log.Error("somewhy unable to delete users session", zap.Error(err))
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	log.Info("users session successfully deleted")
+	return nil
 }

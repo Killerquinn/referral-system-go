@@ -10,6 +10,9 @@ type (
 		Email    string
 		Password string
 	}
+	LogoutUserRequest struct {
+		UserID string
+	}
 	Tokens struct {
 		Access  string
 		Refresh string

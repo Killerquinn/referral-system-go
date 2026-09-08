@@ -132,5 +132,53 @@ func (r *Repository) CreateSession(ctx context.Context, userID uuid.UUID, hashed
 		return nil, fmt.Errorf("%s:%w", op, err)
 	}
 	defer conn.Release()
-	panic("")
+
+	var rToken []byte
+
+	err = conn.QueryRow(ctx, postSession, userID, hashedRefreshToken, userAgent, clientIP, expiresAt).Scan(&rToken)
+	if err != nil {
+		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+
+	return rToken, nil
+}
+
+func (r *Repository) UserIsBlocked(ctx context.Context, userID string) (bool, error) {
+	const op = "user/repo.UserIsBlocked"
+
+	conn, err := r.GetConn()
+	if err != nil {
+		return true, fmt.Errorf("%s:%w", op, err)
+	}
+	defer conn.Release()
+
+	var isblocked bool
+
+	err = conn.QueryRow(ctx, selectIfUserBanned, userID).Scan(&isblocked)
+	if err != nil {
+		return true, fmt.Errorf("%s:%w", op, err)
+	}
+
+	return isblocked, nil
+}
+
+func (r *Repository) DeleteCurrentSession(ctx context.Context, userUUID uuid.UUID) error {
+	const op = "user/repo.DeleteCurrentSession"
+
+	conn, err := r.GetConn()
+	if err != nil {
+		return fmt.Errorf("%s:%w", op, err)
+	}
+	defer conn.Release()
+
+	result, err := conn.Exec(ctx, dropUsersSessionIfExist, userUUID)
+	if err != nil {
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	rowsAffected := result.RowsAffected()
+	if rowsAffected == 0 {
+		return sharederrors.ErrSessionNotFound
+	}
+	return nil
 }

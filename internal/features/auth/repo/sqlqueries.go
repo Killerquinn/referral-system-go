@@ -5,6 +5,14 @@ const (
 	SELECT EXISTS(SELECT 1 FROM users WHERE email = '$1')
 	`
 
+	selectIfUserBanned = `
+	SELECT is_blocked FROM user_sessions WHERE user_id = '$1'
+	`
+
+	dropUsersSessionIfExist = `
+	DELETE FROM user_sessions WHERE user_id = '$1'
+	`
+
 	getUserByEmail = `
 	SELECT id FROM users WHERE email = '$1'
 	`

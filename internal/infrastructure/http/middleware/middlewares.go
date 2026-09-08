@@ -27,7 +27,7 @@ func AuthMiddleware(secret string) func(http.Handler) http.Handler {
 				return
 			}
 
-			// Достаем userID и прокидываем в контекст запроса
+			// store claims into request context
 			if claims, ok := token.Claims.(jwt.MapClaims); ok {
 				ctx := context.WithValue(r.Context(), "userID", claims["sub"])
 				next.ServeHTTP(w, r.WithContext(ctx))
