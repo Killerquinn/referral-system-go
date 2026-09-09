@@ -97,7 +97,7 @@ func TestRegisterUser(t *testing.T) {
 		_, err := authSrv.RegisterUser(context.Background(), "artem", "artem@example.com", "pass123")
 
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "user already exist")
+		assert.Contains(t, err.Error(), "User already exist")
 	})
 
 	t.Run("db_error", func(t *testing.T) {
@@ -157,7 +157,7 @@ func TestLogin(t *testing.T) {
 		_, _, err := authSrv.Login(context.Background(), "artem@example.com", "wrong_password", "agent", "127.0.0.1")
 
 		require.Error(t, err)
-		assert.EqualError(t, err, "invalid credentials")
+		assert.EqualError(t, err, "Error invalid credentials")
 	})
 
 	t.Run("session_creation_failed", func(t *testing.T) {
