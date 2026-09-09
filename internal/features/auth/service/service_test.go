@@ -21,19 +21,29 @@ import (
 type mockUserAuth struct {
 	exists bool
 	err    error
+	banned bool
+	blerr  error
 }
 
 func (m mockUserAuth) UserExists(ctx context.Context, email string) (bool, error) {
 	return m.exists, m.err
 }
 
+func (m mockUserAuth) UserIsBlocked(ctx context.Context, userID string) (bool, error) {
+	return m.banned, m.blerr
+}
+
 type mockSessionRegister struct {
-	token []byte
-	err   error
+	token  []byte
+	err    error
+	delerr error
 }
 
 func (m mockSessionRegister) CreateSession(ctx context.Context, userID uuid.UUID, hashedRefreshToken string, userAgent string, clientIP string, expiresAt time.Time) ([]byte, error) {
 	return m.token, m.err
+}
+func (m mockSessionRegister) DeleteCurrentSession(ctx context.Context, userID uuid.UUID) error {
+	return m.delerr
 }
 
 type mockNewUser struct {
