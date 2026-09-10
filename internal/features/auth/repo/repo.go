@@ -78,7 +78,7 @@ func (r *Repository) User(ctx context.Context, email string) (*auth.User, error)
 	return &user, nil
 }
 
-func (r *Repository) UserExists(ctx context.Context, email string) (bool, error) {
+func (r *Repository) UserExists(ctx context.Context, email string) (bool, error) { //To-Do: make repository shared to avoid connection collisions and else(I'm building monolith, not microservices)
 	const op = "user/repo.UserExist"
 
 	conn, err := r.GetConn()
