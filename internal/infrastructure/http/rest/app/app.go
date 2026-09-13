@@ -4,8 +4,10 @@ import (
 	"time"
 
 	"github.com/killerquinn/referral-system-go/internal/config"
-	repopackage "github.com/killerquinn/referral-system-go/internal/features/auth/repo"
-	service "github.com/killerquinn/referral-system-go/internal/features/auth/service"
+	authrepopackage "github.com/killerquinn/referral-system-go/internal/features/auth/repo"
+	authservice "github.com/killerquinn/referral-system-go/internal/features/auth/service"
+	userrepopackage "github.com/killerquinn/referral-system-go/internal/features/user/repo"
+	userservice "github.com/killerquinn/referral-system-go/internal/features/user/service"
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/http/rest"
 	"go.uber.org/zap"
 )
@@ -17,19 +19,30 @@ type App struct {
 func New(logger *zap.Logger, port int, tokenTTL time.Duration, cfg *config.Config) *App {
 	const op = "New"
 
-	storage := repopackage.New(cfg.Postgres.DSN)
+	//AUTH INTERFACES
+
+	authstorage := authrepopackage.New(cfg.Postgres.DSN)
 
 	secret := cfg.JWT.Secret
 
-	authService := service.New(logger,
+	authService := authservice.New(logger,
 		[]byte(secret),
 		tokenTTL,
-		storage, // userAuth interface
-		storage, // newUser interface
-		storage, // session interface
+		authstorage, // userAuth interface
+		authstorage, // newUser interface
+		authstorage, // session interface
 	)
 
-	app := rest.NewApp(logger, cfg, authService)
+	//USER INTERFACES
+
+	userqueries := userrepopackage.New(cfg.Postgres.DSN)
+
+	userService := userservice.New(
+		logger,
+		userqueries,
+	)
+
+	app := rest.NewApp(logger, cfg, authService, userService)
 
 	return &App{
 		RestServer: app,

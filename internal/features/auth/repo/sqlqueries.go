@@ -2,19 +2,19 @@ package repopackage
 
 const (
 	selectIfUserExist = `
-	SELECT EXISTS(SELECT 1 FROM users WHERE email = '$1')
+	SELECT EXISTS(SELECT 1 FROM users WHERE email = $1)
 	`
 
 	selectIfUserBanned = `
-	SELECT is_blocked FROM user_sessions WHERE user_id = '$1'
+	SELECT is_blocked FROM user_sessions WHERE user_id = $1
 	`
 
 	dropUsersSessionIfExist = `
-	DELETE FROM user_sessions WHERE user_id = '$1'
+	DELETE FROM user_sessions WHERE user_id = $1
 	`
 
 	getUserByEmail = `
-	SELECT id FROM users WHERE email = '$1'
+	SELECT id FROM users WHERE email = $1
 	`
 
 	createUserQuery = `

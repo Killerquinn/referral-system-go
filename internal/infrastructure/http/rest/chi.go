@@ -10,8 +10,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/killerquinn/referral-system-go/internal/config"
-	httphandler "github.com/killerquinn/referral-system-go/internal/features/auth/http-handler"
-	"github.com/killerquinn/referral-system-go/internal/features/auth/service"
+	authhttphandler "github.com/killerquinn/referral-system-go/internal/features/auth/http-handler"
+	authservice "github.com/killerquinn/referral-system-go/internal/features/auth/service"
+	userhttphandler "github.com/killerquinn/referral-system-go/internal/features/user/http"
+	userservice "github.com/killerquinn/referral-system-go/internal/features/user/service"
 	localmdw "github.com/killerquinn/referral-system-go/internal/infrastructure/http/middleware"
 	"go.uber.org/zap"
 )
@@ -22,7 +24,7 @@ type App struct {
 	port   string
 }
 
-func NewApp(log *zap.Logger, cfg *config.Config, auth *service.Auth) *App {
+func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *userservice.Uservice) *App {
 	r := chi.NewRouter()
 
 	log.Info("adding middleware")
@@ -53,7 +55,8 @@ func NewApp(log *zap.Logger, cfg *config.Config, auth *service.Auth) *App {
 		WriteTimeout:      5 * time.Second,
 	}
 
-	httphandler.Register(r, auth)
+	authhttphandler.Register(r, auth)
+	userhttphandler.Register(r, user)
 
 	return &App{
 		server: server,
