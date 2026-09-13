@@ -49,6 +49,10 @@ func (h *HandlerRest) RegisterNewUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := ValidateNewUser(&req); err != nil {
+		http.Error(w, fmt.Sprintf("%v", err), http.StatusBadRequest)
+	}
+
 	userID, err := h.service.RegisterUser(r.Context(), req.Username, req.Email, req.Password)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("%s:%s", op, "internal status error"), http.StatusInternalServerError)
