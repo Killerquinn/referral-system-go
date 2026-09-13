@@ -72,6 +72,10 @@ func (h *HandlerRest) UserLogIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := ValidateLogin(&req); err != nil {
+		http.Error(w, fmt.Sprintf("%v", err), http.StatusBadRequest)
+	}
+
 	userAgent := r.Header.Get("User-Agent")
 
 	ip := getClientIP(r)
