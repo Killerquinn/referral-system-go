@@ -51,6 +51,7 @@ func (h *HandlerRest) RegisterNewUser(w http.ResponseWriter, r *http.Request) {
 
 	if err := ValidateNewUser(&req); err != nil {
 		http.Error(w, fmt.Sprintf("%v", err), http.StatusBadRequest)
+		return
 	}
 
 	userID, err := h.service.RegisterUser(r.Context(), req.Username, req.Email, req.Password)
@@ -74,6 +75,7 @@ func (h *HandlerRest) UserLogIn(w http.ResponseWriter, r *http.Request) {
 
 	if err := ValidateLogin(&req); err != nil {
 		http.Error(w, fmt.Sprintf("%v", err), http.StatusBadRequest)
+		return
 	}
 
 	userAgent := r.Header.Get("User-Agent")

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -45,6 +46,11 @@ func (uh *UserHandler) ChangeUserPassword(w http.ResponseWriter, r *http.Request
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+
+	if err := ValidateChangePassword(&req); err != nil {
+		http.Error(w, fmt.Sprintf("invalid body format: %v", err), http.StatusBadRequest)
 		return
 	}
 
