@@ -40,6 +40,7 @@ func New(logger *zap.Logger, port int, tokenTTL time.Duration, cfg *config.Confi
 	userService := userservice.New(
 		logger,
 		userqueries,
+		userqueries,
 	)
 
 	app := rest.NewApp(logger, cfg, authService, userService)

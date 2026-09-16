@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -87,4 +88,16 @@ func (r *Repository) ChangePassword(ctx context.Context, userID uuid.UUID, newPa
 	}
 
 	return nil
+}
+
+func (r *Repository) IfAbleToChangeReferrer(ctx context.Context, userID uuid.UUID) (availableafter time.Time, able bool, err error) {
+	panic("implement me!")
+}
+
+func (r *Repository) ChangeCurrentReferrer(ctx context.Context, userID uuid.UUID, refcode string) (changeableafter time.Time, err error) {
+	panic("implement me!")
+}
+
+func (r *Repository) IfReferrerExist(ctx context.Context, refcode string) (err error) {
+	panic("implement me!")
 }

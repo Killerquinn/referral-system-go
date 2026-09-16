@@ -24,7 +24,6 @@ func Register(r chi.Router, rs ReferralService) {
 	r.Post("api/v1/referrals/draw", rh.ContestBetweenReferrals)
 	r.Post("api/v1/referrals/becomereff", rh.BecomeSomeonesReferral)
 	r.Get("api/v1/refferer", rh.SeeWhoseReferralAlready)
-	r.Put("api/v1/changereferrer", rh.ChangeReferrer)
 }
 
 func (rh *ReferralHandler) CurrentReferralList(w http.ResponseWriter, r *http.Request) {
@@ -40,9 +39,5 @@ func (rh *ReferralHandler) BecomeSomeonesReferral(w http.ResponseWriter, r *http
 }
 
 func (rh *ReferralHandler) SeeWhoseReferralAlready(w http.ResponseWriter, r *http.Request) {
-	panic("implement me!")
-}
-
-func (rh *ReferralHandler) ChangeReferrer(w http.ResponseWriter, r *http.Request) {
 	panic("implement me!")
 }
