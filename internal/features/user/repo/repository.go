@@ -110,12 +110,12 @@ func (r *Repository) IfAbleToChangeReferrer(ctx context.Context, userID uuid.UUI
 	return ableafter, nil
 }
 
-func (r *Repository) ChangeCurrentReferrer(ctx context.Context, userID uuid.UUID, refcode string) (changeableafter time.Time, err error) {
+func (r *Repository) ChangeCurrentReferrer(ctx context.Context, userID uuid.UUID, refcode string, newTimestamp time.Time) (err error) {
 	const op = "/internal/features/user/repo.ChangeCurrentReferrer"
 
 	conn, err := r.GetConn()
 	if err != nil {
-		return time.Time{}, fmt.Errorf("%s:%w", op, err)
+		return fmt.Errorf("%s:%w", op, err)
 	}
 
 	defer conn.Release()

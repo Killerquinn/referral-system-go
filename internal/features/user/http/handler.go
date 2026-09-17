@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/killerquinn/referral-system-go/internal/features/user/dto"
+	httpfeatures "github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/http-features"
 	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
 )
 
@@ -76,7 +77,7 @@ func (uh *UserHandler) ChangeReferrer(w http.ResponseWriter, r *http.Request) {
 
 	userID, ok := r.Context().Value("user_id").(string)
 	if !ok {
-		responseReturn(w, http.StatusUnauthorized, dto.ChangeReferrerResponse{ReferralCooldown: "", Message: "status: unauthorized"}, "Content-Type", "application/json")
+		responseReturn(w, http.StatusUnauthorized, dto.ChangeReferrerResponse{ReferralCooldown: "", Message: "status: unauthorized"})
 
 		return
 	}
@@ -84,7 +85,7 @@ func (uh *UserHandler) ChangeReferrer(w http.ResponseWriter, r *http.Request) {
 	var req dto.ChangeReferrerRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		responseReturn(w, http.StatusBadRequest, dto.ChangeReferrerResponse{ReferralCooldown: "", Message: "invalid request body"}, "Content-Type", "application/json")
+		responseReturn(w, http.StatusBadRequest, dto.ChangeReferrerResponse{ReferralCooldown: "", Message: "invalid request body"})
 
 		return
 	}
@@ -101,7 +102,7 @@ func (uh *UserHandler) ChangeReferrer(w http.ResponseWriter, r *http.Request) {
 				Message:          "Referrer was't changed due cooldown",
 			}
 
-			responseReturn(w, http.StatusTooManyRequests, resp, "Content-Type", "application/json")
+			responseReturn(w, http.StatusTooManyRequests, resp)
 
 			return
 		}
@@ -112,7 +113,7 @@ func (uh *UserHandler) ChangeReferrer(w http.ResponseWriter, r *http.Request) {
 				Message:          "Referrer wasnt changed, referrer or referral code doesnt exist",
 			}
 
-			responseReturn(w, http.StatusBadRequest, resp, "Content-Type", "application/json")
+			responseReturn(w, http.StatusBadRequest, resp)
 
 			return
 		}
@@ -131,12 +132,16 @@ func (uh *UserHandler) ChangeReferrer(w http.ResponseWriter, r *http.Request) {
 		Message:          "Referrer successfully changed. New cooldown is set to 30 days",
 	}
 
-	responseReturn(w, http.StatusOK, resp, "Content-Type", "application/json")
+	responseReturn(w, http.StatusOK, resp)
 
 }
 
-func responseReturn(w http.ResponseWriter, status int, resp any, key string, value string) {
-	w.Header().Set(key, value)
+func responseReturn(w http.ResponseWriter, status int, resp any, headers ...httpfeatures.Header) {
+	w.Header().Set("Content-Type", "application/json")
+
+	for _, h := range headers {
+		w.Header().Set(h.Key, h.Value)
+	}
 
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(resp)
