@@ -2,12 +2,15 @@ package repo
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/killerquinn/referral-system-go/internal/domain/auth"
 	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
 )
 
@@ -119,6 +122,20 @@ func (r *Repository) ChangeCurrentReferrer(ctx context.Context, userID uuid.UUID
 	}
 
 	defer conn.Release()
+
+	//checking if user doesnt tries to be referrer to himself
+	var referredUser auth.User
+	var referrer auth.User
+	if err = conn.QueryRow(ctx, CheckOnSelfReferralAndFindReferrerID, refcode, userID).Scan(&referredUser.ID, &referredUser.LastTimeRefUsed, &referredUser.ReferredBy, &referrer.ReferredBy); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+
+			return sharederrors.ErrReferrerOrReferralCodeDoesntExist
+		}
+
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	//todo: add sync with referrals SQL table, add check on circular referral, add registration of new referral
 
 	panic("implement me!")
 }

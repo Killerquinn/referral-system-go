@@ -11,4 +11,5 @@ var (
 	ErrUnnableToChangePassword           = errors.New("Unnable to change password")
 	ErrReferrerOrReferralCodeDoesntExist = errors.New("Unnable to change referrer, code or user doesnt exist")
 	ErrCooldownNotPassedYet              = errors.New("Error: cooldown not passed yet")
+	ErrSelfReferred                      = errors.New("Error, self-referring is forbidden")
 )

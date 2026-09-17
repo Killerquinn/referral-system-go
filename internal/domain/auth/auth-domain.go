@@ -24,7 +24,7 @@ type User struct {
 	HashedPassword  []byte    `db:"hashed_password"`
 	OwnReferral     string    `db:"own_referral"`
 	ReferredBy      string    `db:"referred_by"`
-	LastTimeRefused time.Time `db:"last_time_refused"`
+	LastTimeRefUsed time.Time `db:"last_time_refused"`
 	CreatedAt       time.Time `db:"created_at"`
 }
 
