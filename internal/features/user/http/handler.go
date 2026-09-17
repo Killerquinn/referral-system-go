@@ -15,7 +15,7 @@ import (
 
 type UserService interface {
 	CompareAndChangePassword(ctx context.Context, userID string, oldPassword string, newPassword string) (err error)
-	ChangeUsersCurrentReferrer(ctx context.Context, userID string, referralString string) (newTryWillBeAfter time.Time, err error)
+	ChangeUsersCurrentReferrer(ctx context.Context, userID string, referralString string) (newTryWillBeAfter time.Duration, err error)
 }
 type UserHandler struct {
 	uService UserService
@@ -76,31 +76,68 @@ func (uh *UserHandler) ChangeReferrer(w http.ResponseWriter, r *http.Request) {
 
 	userID, ok := r.Context().Value("user_id").(string)
 	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		responseReturn(w, http.StatusUnauthorized, dto.ChangeReferrerResponse{ReferralCooldown: "", Message: "status: unauthorized"}, "Content-Type", "application/json")
+
+		return
 	}
 
 	var req dto.ChangeReferrerRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("invalid body format: %v", err), http.StatusBadRequest)
+		responseReturn(w, http.StatusBadRequest, dto.ChangeReferrerResponse{ReferralCooldown: "", Message: "invalid request body"}, "Content-Type", "application/json")
+
 		return
 	}
 
 	refCooldown, err := uh.uService.ChangeUsersCurrentReferrer(r.Context(), userID, req.ReferralCode)
 	if err != nil {
-		if errors.Is(err, sharederrors.ErrReferrerOrReferralCodeDoesntExist) {
-			http.Error(w, fmt.Sprintf("failed while trying change referrer: %v", sharederrors.ErrReferrerOrReferralCodeDoesntExist), http.StatusBadRequest)
+		if errors.Is(err, sharederrors.ErrCooldownNotPassedYet) {
+			totalHours := int(refCooldown / time.Hour)
+			days := totalHours / 24
+			hours := totalHours % 24
+
+			resp := dto.ChangeReferrerResponse{
+				ReferralCooldown: fmt.Sprintf("%d days, %d hours", days, hours),
+				Message:          "Referrer was't changed due cooldown",
+			}
+
+			responseReturn(w, http.StatusTooManyRequests, resp, "Content-Type", "application/json")
+
 			return
 		}
+
+		if errors.Is(err, sharederrors.ErrReferrerOrReferralCodeDoesntExist) {
+			resp := dto.ChangeReferrerResponse{
+				ReferralCooldown: "cooldown hasnt been checked",
+				Message:          "Referrer wasnt changed, referrer or referral code doesnt exist",
+			}
+
+			responseReturn(w, http.StatusBadRequest, resp, "Content-Type", "application/json")
+
+			return
+		}
+
 		http.Error(w, "status internal server error", http.StatusInternalServerError)
+
 		return
 	}
 
+	totalHours := int(refCooldown / time.Hour)
+	days := totalHours / 24
+	hours := totalHours % 24
+
 	resp := dto.ChangeReferrerResponse{
-		ReferralCooldown: refCooldown,
+		ReferralCooldown: fmt.Sprintf("%d days, %d hours", days, hours),
+		Message:          "Referrer successfully changed. New cooldown is set to 30 days",
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	responseReturn(w, http.StatusOK, resp, "Content-Type", "application/json")
 
+}
+
+func responseReturn(w http.ResponseWriter, status int, resp any, key string, value string) {
+	w.Header().Set(key, value)
+
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(resp)
 }

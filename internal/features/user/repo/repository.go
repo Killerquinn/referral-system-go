@@ -90,14 +90,48 @@ func (r *Repository) ChangePassword(ctx context.Context, userID uuid.UUID, newPa
 	return nil
 }
 
-func (r *Repository) IfAbleToChangeReferrer(ctx context.Context, userID uuid.UUID) (availableafter time.Time, able bool, err error) {
-	panic("implement me!")
+func (r *Repository) IfAbleToChangeReferrer(ctx context.Context, userID uuid.UUID) (availableafter time.Time, err error) {
+	const op = "/internal/features/user/repo.IfAbleToChangeReferrer"
+
+	conn, err := r.GetConn()
+	if err != nil {
+		return time.Time{}, fmt.Errorf("%s:%w", op, err)
+	}
+
+	defer conn.Release()
+
+	var ableafter time.Time
+
+	if err := conn.QueryRow(ctx, CheckIfAbleToChangeReferrer, userID).Scan(&ableafter); err != nil {
+
+		return time.Time{}, fmt.Errorf("%s:%w", op, err)
+	}
+
+	return ableafter, nil
 }
 
 func (r *Repository) ChangeCurrentReferrer(ctx context.Context, userID uuid.UUID, refcode string) (changeableafter time.Time, err error) {
+	const op = "/internal/features/user/repo.ChangeCurrentReferrer"
+
+	conn, err := r.GetConn()
+	if err != nil {
+		return time.Time{}, fmt.Errorf("%s:%w", op, err)
+	}
+
+	defer conn.Release()
+
 	panic("implement me!")
 }
 
 func (r *Repository) IfReferrerExist(ctx context.Context, refcode string) (err error) {
+	const op = "/internal/features/user/repo.IfReferrerExist"
+
+	conn, err := r.GetConn()
+	if err != nil {
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	defer conn.Release()
+
 	panic("implement me!")
 }

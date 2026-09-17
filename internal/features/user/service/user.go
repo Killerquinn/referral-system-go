@@ -23,8 +23,8 @@ type credentialsChange interface {
 }
 
 type referralOptions interface {
-	IfAbleToChangeReferrer(ctx context.Context, userID uuid.UUID) (availableafter time.Time, able bool, err error)
-	ChangeCurrentReferrer(ctx context.Context, userID uuid.UUID, refcode string) (changeableafter time.Time, err error)
+	IfAbleToChangeReferrer(ctx context.Context, userID uuid.UUID) (availableafter time.Time, err error)
+	ChangeCurrentReferrer(ctx context.Context, userID uuid.UUID, refcode string, newTimestamp time.Time) (err error)
 	IfReferrerExist(ctx context.Context, refcode string) (err error)
 }
 
@@ -77,45 +77,59 @@ func (u *Uservice) CompareAndChangePassword(ctx context.Context, userID string, 
 	return nil
 }
 
-func (u *Uservice) ChangeUsersCurrentReferrer(ctx context.Context, userID string, referralString string) (newTryWillBeAfter time.Time, err error) {
+func (u *Uservice) ChangeUsersCurrentReferrer(ctx context.Context, userID string, referralString string) (newTryWillBeAfter time.Duration, err error) {
 	const op = "/internal/features/user/service.ChangeUsersCurrentReferrer"
 
 	log := u.log.With(
 		zap.String("trying to change user's current referrer, operation: ", op),
+		zap.String("userID", userID),
 	)
 
 	log.Info("checking if user's cooldown is gone")
 
 	useruuid, err := uuid.Parse(userID)
 	if err != nil {
-		log.Error("unparseable format of string was in userID, the main problem can be in it generation before parse...")
+		log.Error("unparseable userID format", zap.Error(err))
 
-		return time.Time{}, fmt.Errorf("%s:%w", op, err)
+		return 0, fmt.Errorf("%s:%w", op, err)
 	}
-	//todo
 
-	ableafter, available, err := u.refOpts.IfAbleToChangeReferrer(ctx, useruuid)
+	timestamp, err := u.refOpts.IfAbleToChangeReferrer(ctx, useruuid)
 	if err != nil {
 
-		return time.Time{}, fmt.Errorf("%s:%w", op, err)
+		return 0, fmt.Errorf("%s:%w", op, err)
 	}
 
-	if !available {
+	able, remainingtowait := isOlderThenOneMonth(timestamp)
+	if !able {
 
-		return ableafter, fmt.Errorf("not able to change referrer, it would be able after: %v", ableafter)
+		return remainingtowait, sharederrors.ErrCooldownNotPassedYet
 	}
 
 	if err = u.refOpts.IfReferrerExist(ctx, referralString); err != nil {
 
-		return time.Time{}, sharederrors.ErrReferrerOrReferralCodeDoesntExist
+		return 0, sharederrors.ErrReferrerOrReferralCodeDoesntExist
 	}
 
-	newreferrerafter, err := u.refOpts.ChangeCurrentReferrer(ctx, useruuid, referralString)
-	if err != nil {
-		log.Error("unnable somewhy change referrer to user")
+	now := time.Now()
 
-		return time.Time{}, fmt.Errorf("%s:%w", op, err)
+	if err := u.refOpts.ChangeCurrentReferrer(ctx, useruuid, referralString, now); err != nil {
+		log.Error("unnable somewhy change referrer to user", zap.Error(err))
+
+		return 0, fmt.Errorf("%s:%w", op, err)
 	}
 
-	return newreferrerafter, nil
+	nextCoolDown := now.AddDate(0, 1, 0).Sub(now)
+	return nextCoolDown, nil
+}
+
+func isOlderThenOneMonth(timestamp time.Time) (bool, time.Duration) {
+	oneMonthAfter := timestamp.AddDate(0, 1, 0)
+	remaining := time.Until(oneMonthAfter)
+
+	if remaining > 0 {
+		return false, remaining
+	}
+
+	return true, 0
 }

@@ -1,7 +1,5 @@
 package dto
 
-import "time"
-
 type (
 	ChangeUserPasswordRequest struct {
 		UserID  string
@@ -12,6 +10,7 @@ type (
 		ReferralCode string
 	}
 	ChangeReferrerResponse struct {
-		ReferralCooldown time.Time
+		ReferralCooldown string
+		Message          string
 	}
 )
