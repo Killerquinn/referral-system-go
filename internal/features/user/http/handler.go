@@ -42,33 +42,32 @@ func (uh *UserHandler) ChangeUserPassword(w http.ResponseWriter, r *http.Request
 
 	userID, ok := r.Context().Value("user_id").(string)
 	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		responseReturn(w, http.StatusUnauthorized, dto.ChangeUserPasswordResponse{Message: "status: unauthorized"})
 		return
 	}
 
 	var req dto.ChangeUserPasswordRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid body", http.StatusBadRequest)
+		responseReturn(w, http.StatusBadRequest, dto.ChangeUserPasswordResponse{Message: "Invalid body"})
 		return
 	}
 
 	if err := ValidateChangePassword(&req); err != nil {
-		http.Error(w, fmt.Sprintf("invalid body format: %v", err), http.StatusBadRequest)
+		responseReturn(w, http.StatusBadRequest, dto.ChangeUserPasswordResponse{Message: "Unsuitable password"})
 		return
 	}
 
 	if err := uh.uService.CompareAndChangePassword(r.Context(), userID, req.OldPass, req.NewPass); err != nil {
 		if errors.Is(err, sharederrors.ErrInvalidCreds) {
-			http.Error(w, "Invalid credentials", http.StatusForbidden)
+			responseReturn(w, http.StatusForbidden, dto.ChangeUserPasswordResponse{Message: "Invalid credentials"})
 			return
 		}
 		http.Error(w, "status internal error", http.StatusInternalServerError)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(http.StatusOK)
+	responseReturn(w, http.StatusOK, dto.ChangeUserPasswordResponse{Message: "Password successfully changed!"})
 
 }
 

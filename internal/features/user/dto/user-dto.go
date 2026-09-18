@@ -6,6 +6,9 @@ type (
 		OldPass string
 		NewPass string
 	}
+	ChangeUserPasswordResponse struct {
+		Message string
+	}
 	ChangeReferrerRequest struct {
 		ReferralCode string
 	}
