@@ -129,7 +129,7 @@ func (r *Repository) ChangeCurrentReferrer(ctx context.Context, userID uuid.UUID
 	if err = conn.QueryRow(ctx, CheckOnSelfReferralAndFindReferrerID, refcode, userID).Scan(&referredUser.ID, &referredUser.LastTimeRefUsed, &referredUser.ReferredBy, &referrer.ReferredBy); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 
-			return sharederrors.ErrReferrerOrReferralCodeDoesntExist
+			return sharederrors.ErrSelfReferred
 		}
 
 		return fmt.Errorf("%s:%w", op, err)

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -107,13 +108,29 @@ func (u *Uservice) ChangeUsersCurrentReferrer(ctx context.Context, userID string
 	}
 
 	if err = u.refOpts.IfReferrerExist(ctx, referralString); err != nil {
+		if errors.Is(err, sharederrors.ErrReferrerOrReferralCodeDoesntExist) {
 
-		return 0, sharederrors.ErrReferrerOrReferralCodeDoesntExist
+			return 0, sharederrors.ErrReferrerOrReferralCodeDoesntExist
+		}
+		u.log.Error("internal server error: ", zap.Error(err))
+
+		return 0, fmt.Errorf("%s:%w", op, err)
 	}
 
 	now := time.Now()
 
 	if err := u.refOpts.ChangeCurrentReferrer(ctx, useruuid, referralString, now); err != nil {
+		if errors.Is(err, sharederrors.ErrSelfReferred) {
+			log.Error("unnable to change current referrer to user", zap.Error(err))
+
+			return 0, sharederrors.ErrSelfReferred
+		}
+		if errors.Is(err, sharederrors.ErrReferrerOrReferralCodeDoesntExist) {
+			log.Error("unnable to UpdateUsersReferrer, the reason must be in query, fix it", zap.Error(err))
+
+			return 0, sharederrors.ErrReferrerOrReferralCodeDoesntExist
+		}
+
 		log.Error("unnable somewhy change referrer to user", zap.Error(err))
 
 		return 0, fmt.Errorf("%s:%w", op, err)
