@@ -163,5 +163,15 @@ func (r *Repository) IfReferrerExist(ctx context.Context, refcode string) (err e
 
 	defer conn.Release()
 
-	panic("implement me!")
+	var exist bool
+	if err := conn.QueryRow(ctx, SelectIfExist, refcode).Scan(&exist); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) || !exist {
+
+			return sharederrors.ErrReferrerOrReferralCodeDoesntExist
+		}
+
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	return nil
 }

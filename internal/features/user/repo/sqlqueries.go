@@ -40,4 +40,12 @@ const (
   	  referral_timestamp = NOW()
 	WHERE referral_owner = $1;
 	`
+
+	SelectIfExist = `
+	SELECT EXISTS(
+		SELECT 1
+		FROM users
+		WHERE own_referral_key = $1
+	)
+	`
 )
