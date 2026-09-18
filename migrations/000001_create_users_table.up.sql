@@ -2,7 +2,7 @@
 
 CREATE TABLE users(
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    username VARCHAR(25) NOT NULL, 
+    username VARCHAR(25) NOT NULL, -- To-Do: make username UNIQUE and change some logic then 
     email VARCHAR(255) NOT NULL UNIQUE,
     hashed_password VARCHAR(255) NOT NULL,
     own_referral_key VARCHAR(255) NOT NULL UNIQUE,

@@ -43,6 +43,8 @@ func New(logger *zap.Logger, port int, tokenTTL time.Duration, cfg *config.Confi
 		userqueries,
 	)
 
+	//add referral feature there
+
 	app := rest.NewApp(logger, cfg, authService, userService)
 
 	return &App{
