@@ -26,7 +26,18 @@ const (
 	`
 
 	UpdateUsersReferrer = `
-	UPDATE users
-	SET referra
-	` //todo: <- finish it
+	WITH updated_user AS (
+    UPDATE users
+    SET 
+        referred_by_id = $1,
+        last_time_ref_used = $2
+    WHERE id = $3
+    RETURNING id
+	)
+	UPDATE referrals
+	SET
+  	  referred_user_id = $3,
+  	  referral_timestamp = NOW()
+	WHERE referral_owner = $1;
+	`
 )

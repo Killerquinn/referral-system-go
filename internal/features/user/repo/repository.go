@@ -134,10 +134,23 @@ func (r *Repository) ChangeCurrentReferrer(ctx context.Context, userID uuid.UUID
 
 		return fmt.Errorf("%s:%w", op, err)
 	}
+	//update user table && referrals table
+	result, err := conn.Exec(ctx, UpdateUsersReferrer, referrer.ID, newTimestamp, referredUser.ID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
 
-	//todo: add sync with referrals SQL table, add check on circular referral, add registration of new referral
+			return sharederrors.ErrReferrerOrReferralCodeDoesntExist
+		}
 
-	panic("implement me!")
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	affectedrows := result.RowsAffected()
+	if affectedrows == 0 {
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	return nil
 }
 
 func (r *Repository) IfReferrerExist(ctx context.Context, refcode string) (err error) {
