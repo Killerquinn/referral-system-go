@@ -12,7 +12,7 @@ import (
 )
 
 type ReferralService interface {
-	WhoseReferralUserIs(ctx context.Context, username string) (referrer string, referrerSince time.Time, referrerprofileURL string, err error)
+	WhoseReferralUserIs(ctx context.Context, username string) (referrer string, referrerprofileURL string, referrerSince time.Time, err error)
 }
 
 type ReferralHandler struct {
@@ -71,7 +71,7 @@ func (rh *ReferralHandler) SeeWhoseReferralAlready(w http.ResponseWriter, r *htt
 		return
 	}
 
-	referrersUsername, referrerSince, referrerProfileUrl, err := rh.rService.WhoseReferralUserIs(r.Context(), req.Username)
+	referrersUsername, referrerProfileUrl, referrerSince, err := rh.rService.WhoseReferralUserIs(r.Context(), req.Username)
 	if err != nil {
 		responseReturn(w, http.StatusInternalServerError, dto.SeeWhoseReferralAlreadyResponse{Referrer: "", ReferrerURL: "", ReferralSince: time.Time{}, Message: "internal server error"})
 		return

@@ -2,9 +2,14 @@ package repo
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log"
+	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
 )
 
 type Repository struct {
@@ -41,4 +46,36 @@ func (r *Repository) GetConn() (*pgxpool.Conn, error) {
 	}
 
 	return conn, err
+}
+
+func (r *Repository) CheckReferralByUsername(ctx context.Context, username string) (referrersusername string, referredSince time.Time, err error) {
+	const op = "/referral-system-go/internal/features/referral/repo"
+
+	conn, err := r.GetConn()
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("%s:%w", op, err)
+	}
+
+	defer conn.Release()
+
+	var referrerUserID string
+	var lastTimeReferred time.Time
+
+	if err := conn.QueryRow(ctx, FindReferrerByReferralUsername, username).Scan(&referrerUserID, &lastTimeReferred); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+
+			return "", time.Time{}, sharederrors.ErrUserNotFound
+		}
+
+		return "", time.Time{}, fmt.Errorf("%s:%w", op, err)
+	}
+
+	var referrerUsername string
+
+	if err := conn.QueryRow(ctx, GetReferrerByUserID, referrerUserID).Scan(&referrerUsername); err != nil {
+
+		return "", time.Time{}, fmt.Errorf("%s:%w", op, err)
+	}
+
+	return referrerUsername, lastTimeReferred, nil
 }
