@@ -3,12 +3,14 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/killerquinn/referral-system-go/internal/features/referral/dto"
 	httpfeatures "github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/http-features"
+	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
 )
 
 type ReferralService interface {
@@ -73,6 +75,16 @@ func (rh *ReferralHandler) SeeWhoseReferralAlready(w http.ResponseWriter, r *htt
 
 	referrersUsername, referrerProfileUrl, referrerSince, err := rh.rService.WhoseReferralUserIs(r.Context(), req.Username)
 	if err != nil {
+		if errors.Is(err, sharederrors.ErrUserNotFound) {
+			responseReturn(w, http.StatusNotFound, dto.SeeWhoseReferralAlreadyResponse{Referrer: "", ReferrerURL: "", ReferralSince: time.Time{}, Message: "User not found"})
+			return
+
+		}
+		if errors.Is(err, sharederrors.ErrUserIsNotReferredYet) {
+			responseReturn(w, http.StatusNoContent, dto.SeeWhoseReferralAlreadyResponse{Referrer: "", ReferrerURL: "", ReferralSince: time.Time{}, Message: "user is not referred yet to find his referrer"})
+			return
+
+		}
 		responseReturn(w, http.StatusInternalServerError, dto.SeeWhoseReferralAlreadyResponse{Referrer: "", ReferrerURL: "", ReferralSince: time.Time{}, Message: "internal server error"})
 		return
 	}
