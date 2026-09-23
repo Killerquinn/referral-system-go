@@ -13,4 +13,6 @@ var (
 	ErrCooldownNotPassedYet              = errors.New("Error: cooldown not passed yet")
 	ErrSelfReferred                      = errors.New("Error, self-referring is forbidden")
 	ErrUserIsNotReferredYet              = errors.New("Unable to check whose user referral, isn't referred yet")
+	ErrUserIsBanned                      = errors.New("Error user is banned. Any interactions with this user unavaible now")
+	ErrUserDoesntHaveReferralsYet        = errors.New("User doesnt have referrals yet")
 )

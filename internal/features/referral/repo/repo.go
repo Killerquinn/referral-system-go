@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/killerquinn/referral-system-go/internal/features/referral/dto"
 	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
 )
 
@@ -78,4 +79,12 @@ func (r *Repository) CheckReferralByUsername(ctx context.Context, username strin
 	}
 
 	return referrerUsername, lastTimeReferred, nil
+}
+
+func (r *Repository) GetReferralsByRefferersUsername(ctx context.Context, username string, cursor string, limit int) (entities []dto.ReferralItem, err error) {
+	panic("implement me!")
+}
+
+func (r *Repository) GetReferralsByOwnUserID(ctx context.Context, username string, cursor string, limit int) (entities []dto.ReferralItem, err error) {
+	panic("implement me!")
 }

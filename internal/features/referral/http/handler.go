@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/killerquinn/referral-system-go/internal/features/referral/dto"
 	httpfeatures "github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/http-features"
 	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
@@ -15,6 +17,7 @@ import (
 
 type ReferralService interface {
 	WhoseReferralUserIs(ctx context.Context, username string) (referrer string, referrerprofileURL string, referrerSince time.Time, err error)
+	CheckCurrentReferralList(ctx context.Context, referrerID string, params dto.ReferralListParams) (*dto.CurrentReferralListResponse, error)
 }
 
 type ReferralHandler struct {
@@ -28,21 +31,74 @@ func NewRefferalHandler(rs ReferralService) *ReferralHandler {
 func Register(r chi.Router, rs ReferralService) {
 	rh := NewRefferalHandler(rs)
 
-	r.Get("api/v1/referrals", rh.CurrentReferralList)
+	r.Get("api/v1/referrals/{identifier}", rh.CurrentReferralList)
 	r.Post("api/v1/referrals/draw", rh.ContestBetweenReferrals)
-	r.Get("api/v1/refferer", rh.SeeWhoseReferralAlready)
+	r.Get("api/v1/{identifier}/refferer", rh.SeeWhoseReferralAlready)
 }
 
-func (rh *ReferralHandler) CurrentReferralList(w http.ResponseWriter, r *http.Request) {
+const (
+	defaultLimit = 20
+	maxLimit     = 100
+)
+
+func (rh *ReferralHandler) CurrentReferralList(w http.ResponseWriter, r *http.Request) { // cursor based pagination
 	const op = "referral-system-go/internal/features/referral/http/handler.go - CurrentReferralList"
 
-	_, ok := r.Context().Value("user_id").(string)
+	var targetID string
+
+	userID, ok := r.Context().Value("user_id").(string) //use it in case if identifier is empty
 	if !ok {
-		responseReturn(w, http.StatusUnauthorized, dto.CurrentReferralListResponse{})
+		responseReturn(w, http.StatusUnauthorized, dto.CurrentReferralListResponse{Items: nil, NextCursor: nil, HasMore: false, Message: "cannot check referrals: unauthorized"})
 		return
 	}
 
-	panic("implement me!")
+	identifier := chi.URLParam(r, "identifier")
+	cursor := r.URL.Query().Get("cursor")
+	limitStr := r.URL.Query().Get("limit")
+
+	parsedLimit := parseLimit(limitStr)
+
+	if identifier == "" {
+		targetID = userID
+	} else {
+		_, err := uuid.Parse(identifier)
+		if err == nil {
+			targetID = userID //not allowing user to find someone by userID
+		} else {
+			if len(identifier) < 3 || len(identifier) > 32 {
+
+				http.Error(w, "invalid username length", http.StatusBadRequest)
+				return
+			}
+			targetID = identifier
+		}
+	}
+
+	req := dto.CurrentReferralListRequest{
+		Identifier: targetID,
+		Cursor:     cursor,
+		Limit:      parsedLimit,
+	}
+	params := dto.ReferralListParams{
+		Limit:  req.Limit,
+		Cursor: req.Cursor,
+	}
+
+	resp, err := rh.rService.CheckCurrentReferralList(r.Context(), req.Identifier, params)
+	if err != nil {
+		if errors.Is(err, sharederrors.ErrUserNotFound) {
+			responseReturn(w, http.StatusNotFound, dto.CurrentReferralListResponse{Items: nil, NextCursor: nil, HasMore: false, Message: "user with this username doesnt exist"})
+			return
+		}
+		if errors.Is(err, sharederrors.ErrUserIsBanned) {
+			responseReturn(w, http.StatusForbidden, dto.CurrentReferralListResponse{Items: nil, NextCursor: nil, HasMore: false, Message: "Error user is banned. Any interactions with this user unavaible now"})
+			return
+		}
+		responseReturn(w, http.StatusInternalServerError, dto.CurrentReferralListResponse{Items: nil, NextCursor: nil, HasMore: false, Message: "internal server error"})
+		return
+	}
+
+	responseReturn(w, http.StatusOK, resp)
 }
 
 func (rh *ReferralHandler) ContestBetweenReferrals(w http.ResponseWriter, r *http.Request) {
@@ -66,11 +122,10 @@ func (rh *ReferralHandler) SeeWhoseReferralAlready(w http.ResponseWriter, r *htt
 		return
 	}
 
-	var req dto.SeeWhoseReferralAlreadyRequest
+	identifier := chi.URLParam(r, "identifier")
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		responseReturn(w, http.StatusBadRequest, dto.SeeWhoseReferralAlreadyResponse{Referrer: "", ReferrerURL: "", ReferralSince: time.Time{}, Message: "invalid body request"})
-		return
+	req := dto.SeeWhoseReferralAlreadyRequest{
+		Username: identifier,
 	}
 
 	referrersUsername, referrerProfileUrl, referrerSince, err := rh.rService.WhoseReferralUserIs(r.Context(), req.Username)
@@ -107,4 +162,25 @@ func responseReturn(w http.ResponseWriter, status int, resp any, headers ...http
 
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(resp)
+}
+
+func parseLimit(limitStr string) int {
+	if limitStr == "" {
+		return defaultLimit
+	}
+
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil {
+		return defaultLimit
+	}
+
+	if limit <= 0 {
+		return defaultLimit
+	}
+
+	if limit > maxLimit {
+		return maxLimit
+	}
+
+	return limit
 }
