@@ -13,8 +13,20 @@ type (
 		Message       string    `json:"message"`
 	}
 	ContestBetweenReferralsRequest struct {
+		WinnersQuantity int        `json:"winners_quantity"`
+		StartFrom       *time.Time `json:"winners_became_referrals_since"`
+		EndUntil        *time.Time `json:"referrals_can_be_winners_until"`
 	}
 	ContestBetweenReferralsResponse struct {
+		Winners []WinnersDTO `json:"winners"`
+		Message string       `json:"message"`
+	}
+
+	WinnersDTO struct {
+		Place         int       `json:"place"`
+		Username      string    `json:"winner_username"`
+		UserURL       string    `json:"winner_user_url"`
+		ReferralSince time.Time `json:"winner_referral_since"`
 	}
 	CurrentReferralListRequest struct {
 		Identifier string `json:"indentifier"`

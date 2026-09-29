@@ -18,6 +18,7 @@ import (
 type ReferralService interface {
 	WhoseReferralUserIs(ctx context.Context, username string) (referrer string, referrerprofileURL string, referrerSince time.Time, err error)
 	CheckCurrentReferralList(ctx context.Context, referrerID string, params dto.ReferralListParams) (*dto.CurrentReferralListResponse, error)
+	StartContest(ctx context.Context, sponsorID string, winnersQuantity int, startFrom *time.Time, endUntil *time.Time) (dto.ContestBetweenReferralsResponse, error)
 }
 
 type ReferralHandler struct {
@@ -37,8 +38,10 @@ func Register(r chi.Router, rs ReferralService) {
 }
 
 const (
-	defaultLimit = 20
-	maxLimit     = 100
+	defaultLimit       = 20
+	maxLimit           = 100
+	minWinnersQuantity = 1
+	maxWinnersQuantity = 100
 )
 
 func (rh *ReferralHandler) CurrentReferralList(w http.ResponseWriter, r *http.Request) { // cursor based pagination
@@ -104,13 +107,39 @@ func (rh *ReferralHandler) CurrentReferralList(w http.ResponseWriter, r *http.Re
 func (rh *ReferralHandler) ContestBetweenReferrals(w http.ResponseWriter, r *http.Request) {
 	const op = "referral-system-go/internal/features/referral/http/handler.go - ContestBetweenReferrals"
 
-	_, ok := r.Context().Value("user_id").(string)
+	sponsorID, ok := r.Context().Value("user_id").(string)
 	if !ok {
-		responseReturn(w, http.StatusUnauthorized, dto.ContestBetweenReferralsResponse{})
+		responseReturn(w, http.StatusUnauthorized, dto.ContestBetweenReferralsResponse{Winners: nil, Message: "unauthorized"})
 		return
 	}
 
-	panic("implement me!")
+	var req dto.ContestBetweenReferralsRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		responseReturn(w, http.StatusBadRequest, dto.ContestBetweenReferralsResponse{Winners: nil, Message: "invalid request body"})
+		return
+	}
+
+	if req.WinnersQuantity < minWinnersQuantity ||
+		req.WinnersQuantity > maxWinnersQuantity {
+		responseReturn(w, http.StatusBadRequest, dto.ContestBetweenReferralsResponse{Winners: nil, Message: "invalid winners quantity"})
+		return
+	}
+
+	if req.StartFrom != nil && req.EndUntil != nil &&
+		req.StartFrom.After(*req.EndUntil) {
+		responseReturn(w, http.StatusBadRequest, dto.ContestBetweenReferralsResponse{Winners: nil, Message: "winners_became_referrals_since must be before referrals_can_be_winners_until"})
+		return
+	}
+
+	resp, err := rh.rService.StartContest(r.Context(), sponsorID, req.WinnersQuantity, req.StartFrom, req.EndUntil)
+	if err != nil {
+
+		responseReturn(w, http.StatusInternalServerError, dto.ContestBetweenReferralsResponse{Winners: nil, Message: "status internal server error"})
+		return
+	}
+
+	responseReturn(w, http.StatusOK, resp)
 }
 
 func (rh *ReferralHandler) SeeWhoseReferralAlready(w http.ResponseWriter, r *http.Request) {
