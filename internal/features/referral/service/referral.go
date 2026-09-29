@@ -21,8 +21,8 @@ type RefService struct {
 
 type referralCheck interface {
 	CheckReferralByUsername(ctx context.Context, username string) (referrerusername string, referredSince time.Time, err error)
-	GetReferralsByRefferersUsername(ctx context.Context, username string, cursor string, limit int) (entities []dto.ReferralItem, err error)
-	GetReferralsByOwnUserID(ctx context.Context, username string, cursor string, limit int) (entities []dto.ReferralItem, err error)
+	GetReferralsByRefferersUsername(ctx context.Context, username string, cursor *time.Time, lastID *string, limit int) (entities []dto.ReferralItem, err error)
+	GetReferralsByOwnUserID(ctx context.Context, username string, cursor *time.Time, lastID *string, limit int) (entities []dto.ReferralItem, err error)
 }
 
 func New(
@@ -74,17 +74,33 @@ func (rfs *RefService) CheckCurrentReferralList(ctx context.Context, referrerID 
 		params.Limit = 100
 	}
 
+	var cursorTime *time.Time
+	var cursorID *string
+
 	var (
 		entities []dto.ReferralItem
 		err      error
 	)
 
+	if params.Cursor == "" {
+		cursorTime = nil
+		cursorID = nil
+	} else {
+		parsedTime, parsedID, err := httpfeatures.ParseCursor(params.Cursor)
+		if err != nil {
+			return nil, sharederrors.ErrInvalidCursorFormat
+		}
+		cursorTime = &parsedTime
+		cursorID = &parsedID
+	}
+
 	switch _, parseErr := uuid.Parse(referrerID); parseErr {
 	case nil:
 		log.Info("user tries to check his own referrals")
-		entities, err = rfs.refCheck.GetReferralsByOwnUserID(ctx, referrerID, params.Cursor, params.Limit)
+		entities, err = rfs.refCheck.GetReferralsByOwnUserID(ctx, referrerID, cursorTime, cursorID, params.Limit)
 	default:
-		entities, err = rfs.refCheck.GetReferralsByRefferersUsername(ctx, referrerID, params.Cursor, params.Limit)
+		log.Info("user tries to check other referrals by username referrals")
+		entities, err = rfs.refCheck.GetReferralsByRefferersUsername(ctx, referrerID, cursorTime, cursorID, params.Limit)
 	}
 
 	if err != nil {
@@ -102,16 +118,16 @@ func (rfs *RefService) CheckCurrentReferralList(ctx context.Context, referrerID 
 		}
 	}
 	hasMore := false
-	var nextCursor *time.Time
+	var nextCursor string
 
 	if len(entities) > params.Limit {
 		hasMore = true
 
 		entities = entities[:params.Limit]
 
-		lastTimeItem := entities[len(entities)].JoinedAt
+		lastTimeItem := entities[len(entities)]
 
-		nextCursor = &lastTimeItem
+		nextCursor = fmt.Sprintf("%s_%s", lastTimeItem.JoinedAt.Format(time.RFC3339), lastTimeItem.ID)
 	}
 	items := make([]dto.ReferralItem, 0, len(entities))
 	for _, e := range entities {
@@ -125,7 +141,7 @@ func (rfs *RefService) CheckCurrentReferralList(ctx context.Context, referrerID 
 
 	return &dto.CurrentReferralListResponse{
 		Items:      items,
-		NextCursor: httpfeatures.TimePtrToStringPtr(nextCursor),
+		NextCursor: &nextCursor,
 		HasMore:    hasMore,
 	}, nil
 

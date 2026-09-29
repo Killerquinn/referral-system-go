@@ -38,6 +38,6 @@ type (
 		Items      []ReferralItem `json:"items"`
 		NextCursor *string        `json:"next_cursor,omitempty"` // nil if it have no more elements || To-Do: make it in base64 in format rawCursor := fmt.Sprintf("%s|%s", lastItem.CreatedAt.Format(time.RFC3339Nano), lastItem.ID)
 		HasMore    bool           `json:"has_more"`
-		Message    string
+		Message    string         `json:"message"`
 	}
 )

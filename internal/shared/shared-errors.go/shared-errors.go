@@ -15,4 +15,5 @@ var (
 	ErrUserIsNotReferredYet              = errors.New("Unable to check whose user referral, isn't referred yet")
 	ErrUserIsBanned                      = errors.New("Error user is banned. Any interactions with this user unavaible now")
 	ErrUserDoesntHaveReferralsYet        = errors.New("User doesnt have referrals yet")
+	ErrInvalidCursorFormat               = errors.New("Error client gave invalid cursor format: unnable to show next pages of referrals")
 )

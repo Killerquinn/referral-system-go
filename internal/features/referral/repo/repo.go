@@ -81,10 +81,73 @@ func (r *Repository) CheckReferralByUsername(ctx context.Context, username strin
 	return referrerUsername, lastTimeReferred, nil
 }
 
-func (r *Repository) GetReferralsByRefferersUsername(ctx context.Context, username string, cursor string, limit int) (entities []dto.ReferralItem, err error) {
-	panic("implement me!")
+func (r *Repository) GetReferralsByRefferersUsername(ctx context.Context, username string, cursor *time.Time, lastID *string, limit int) (entities []dto.ReferralItem, err error) {
+	const op = "referral-system-go/internal/features/referral/repo GetReferralsByRefferersUsername"
+
+	conn, err := r.GetConn()
+	if err != nil {
+
+		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+
+	defer conn.Release()
+
+	var banned bool
+
+	if err := conn.QueryRow(ctx, CheckIfUserIsBanned, username).Scan(&banned); err != nil {
+
+		return nil, sharederrors.ErrUserIsBanned
+	}
+
+	rows, err := conn.Query(ctx, GetReferralsByUsername, username, cursor, lastID, limit)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+
+			return nil, sharederrors.ErrUserNotFound
+		}
+
+		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+
+	resp, err := pgx.CollectRows(rows, pgx.RowToStructByName[dto.ReferralItem])
+	if err != nil {
+		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+	if len(resp) == 0 {
+		return nil, sharederrors.ErrUserDoesntHaveReferralsYet
+	}
+
+	return resp, nil
 }
 
-func (r *Repository) GetReferralsByOwnUserID(ctx context.Context, username string, cursor string, limit int) (entities []dto.ReferralItem, err error) {
-	panic("implement me!")
+func (r *Repository) GetReferralsByOwnUserID(ctx context.Context, ownUserID string, cursor *time.Time, lastID *string, limit int) (entities []dto.ReferralItem, err error) {
+	const op = "referral-system-go/internal/features/referral/repo GetReferralsByOwnUserID"
+
+	conn, err := r.GetConn()
+	if err != nil {
+
+		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+
+	defer conn.Release()
+
+	rows, err := conn.Query(ctx, GetReferralsByOwnUserID, ownUserID, cursor, lastID, limit)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+
+			return nil, sharederrors.ErrUserNotFound
+		}
+
+		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+
+	resp, err := pgx.CollectRows(rows, pgx.RowToStructByName[dto.ReferralItem])
+	if err != nil {
+		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+	if len(resp) == 0 {
+		return nil, sharederrors.ErrUserDoesntHaveReferralsYet
+	}
+
+	return resp, nil
 }
