@@ -134,6 +134,10 @@ func (rh *ReferralHandler) ContestBetweenReferrals(w http.ResponseWriter, r *htt
 
 	resp, err := rh.rService.StartContest(r.Context(), sponsorID, req.WinnersQuantity, req.StartFrom, req.EndUntil)
 	if err != nil {
+		if errors.Is(err, sharederrors.ErrInsufficientQuantityOfReferrals) {
+
+			responseReturn(w, http.StatusForbidden, dto.ContestBetweenReferralsResponse{Winners: nil, Message: "insufficient quantity of referrals to start contest"})
+		}
 
 		responseReturn(w, http.StatusInternalServerError, dto.ContestBetweenReferralsResponse{Winners: nil, Message: "status internal server error"})
 		return

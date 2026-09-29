@@ -17,5 +17,5 @@ var (
 	ErrUserDoesntHaveReferralsYet        = errors.New("User doesnt have referrals yet")
 	ErrInvalidCursorFormat               = errors.New("Error client gave invalid cursor format: unnable to show next pages of referrals")
 
-// ErrInsufficientQuantityOfReferrals   = errors.New("User have insufficient quantity of referrals to start contest with this much of winners")
+	ErrInsufficientQuantityOfReferrals = errors.New("User have insufficient quantity of referrals to start contest with this much of winners")
 )

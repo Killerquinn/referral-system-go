@@ -151,3 +151,52 @@ func (r *Repository) GetReferralsByOwnUserID(ctx context.Context, ownUserID stri
 
 	return resp, nil
 }
+
+func (r *Repository) GetActualQuantityOfReferrers(ctx context.Context, userid string, startFrom *time.Time, endUntil *time.Time) (int, error) {
+	const op = "referral-system-go/internal/features/referral/repo GetActualQuantityOfReferrers"
+
+	conn, err := r.GetConn()
+	if err != nil {
+
+		return 0, fmt.Errorf("%s:%w", op, err)
+	}
+
+	defer conn.Release()
+
+	var count int
+
+	if err := conn.QueryRow(ctx, GetQuantityOfReferrers, userid, startFrom, endUntil).Scan(&count); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+
+			return 0, sharederrors.ErrInsufficientQuantityOfReferrals
+		}
+		return 0, fmt.Errorf("%s:%w", op, err)
+	}
+
+	return count, nil
+}
+
+func (r *Repository) GetWinners(ctx context.Context, offsets []int, sponsorID string, startFrom *time.Time, endUntil *time.Time) ([]dto.WinnersDTO, error) {
+	const op = "referral-system-go/internal/features/referral/repo GetWinners"
+
+	conn, err := r.GetConn()
+	if err != nil {
+
+		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+
+	defer conn.Release()
+
+	rows, err := conn.Query(ctx, GetRandomUsersByOffset, offsets, sponsorID, startFrom, endUntil)
+	if err != nil {
+		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+
+	defer rows.Close()
+
+	winners, err := pgx.CollectRows(rows, pgx.RowToStructByNameLax[dto.WinnersDTO])
+	if err != nil {
+		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+	return winners, nil
+}

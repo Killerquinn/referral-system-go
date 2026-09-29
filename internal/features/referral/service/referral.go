@@ -160,6 +160,9 @@ func (rfs *RefService) StartContest(ctx context.Context, sponsorID string, winne
 
 	actualNumberOfReferrers, err := rfs.refCheck.GetActualQuantityOfReferrers(ctx, sponsorID, startFrom, endUntil)
 	if err != nil {
+		if errors.Is(err, sharederrors.ErrInsufficientQuantityOfReferrals) {
+			return dto.ContestBetweenReferralsResponse{}, sharederrors.ErrInsufficientQuantityOfReferrals
+		}
 		log.Error("failed while tried to check actual quantity of users referrals", zap.Error(err))
 		return dto.ContestBetweenReferralsResponse{}, fmt.Errorf("%s:%w", op, err)
 	}
