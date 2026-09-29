@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/killerquinn/referral-system-go/internal/features/referral/dto"
 	httpfeatures "github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/http-features"
+	randfeatures "github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/rand-features"
 	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
 	"go.uber.org/zap"
 )
@@ -23,6 +24,8 @@ type referralCheck interface {
 	CheckReferralByUsername(ctx context.Context, username string) (referrerusername string, referredSince time.Time, err error)
 	GetReferralsByRefferersUsername(ctx context.Context, username string, cursor *time.Time, lastID *string, limit int) (entities []dto.ReferralItem, err error)
 	GetReferralsByOwnUserID(ctx context.Context, username string, cursor *time.Time, lastID *string, limit int) (entities []dto.ReferralItem, err error)
+	GetActualQuantityOfReferrers(ctx context.Context, userid string, startFrom *time.Time, endUntil *time.Time) (int, error)
+	GetWinners(ctx context.Context, offsets []int, sponsorID string, startFrom *time.Time, endUntil *time.Time) ([]dto.WinnersDTO, error)
 }
 
 func New(
@@ -145,4 +148,54 @@ func (rfs *RefService) CheckCurrentReferralList(ctx context.Context, referrerID 
 		HasMore:    hasMore,
 	}, nil
 
+}
+
+func (rfs *RefService) StartContest(ctx context.Context, sponsorID string, winnersQuantity int, startFrom *time.Time, endUntil *time.Time) (dto.ContestBetweenReferralsResponse, error) {
+	const op = "internal/features/referral/service - StartContest"
+
+	log := rfs.log.With(
+		zap.String("sponsor_id", sponsorID),
+		zap.String("op", op),
+	)
+
+	actualNumberOfReferrers, err := rfs.refCheck.GetActualQuantityOfReferrers(ctx, sponsorID, startFrom, endUntil)
+	if err != nil {
+		log.Error("failed while tried to check actual quantity of users referrals", zap.Error(err))
+		return dto.ContestBetweenReferralsResponse{}, fmt.Errorf("%s:%w", op, err)
+	}
+	if winnersQuantity > actualNumberOfReferrers {
+		winnersQuantity = actualNumberOfReferrers
+	}
+
+	//To-Do: cache of actual number of referrers needed there
+
+	offset, err := randfeatures.GenerateRandOffset(winnersQuantity, actualNumberOfReferrers)
+	if err != nil {
+		log.Error("unnable to generate random offset", zap.Error(err))
+
+		return dto.ContestBetweenReferralsResponse{}, fmt.Errorf("%s:%w", op, err)
+	}
+
+	winners, err := rfs.refCheck.GetWinners(ctx, offset, sponsorID, startFrom, endUntil)
+	if err != nil {
+		log.Error("unnable to get winners", zap.Error(err))
+
+		return dto.ContestBetweenReferralsResponse{}, fmt.Errorf("%s:%w", op, err)
+	}
+
+	calculatedWinners := make([]dto.WinnersDTO, len(winners))
+
+	for i, w := range winners {
+		calculatedWinners[i] = dto.WinnersDTO{
+			Place:         i + 1,
+			Username:      w.Username,
+			UserURL:       httpfeatures.BuildUrl(rfs.baseurl, w.Username),
+			ReferralSince: w.ReferralSince,
+		}
+	}
+
+	return dto.ContestBetweenReferralsResponse{
+		Winners: calculatedWinners,
+		Message: "users raffled successfully",
+	}, nil
 }

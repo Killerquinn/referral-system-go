@@ -44,3 +44,5 @@ CREATE TABLE giveaway_attendee(
     PRIMARY KEY (gw_id, gw_user_id)
 );
 
+CREATE INDEX idx_referrals_referrer_joined ON referrals(referrer_id, referral_timestamp);
+

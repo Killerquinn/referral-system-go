@@ -61,4 +61,34 @@ const (
 		user_sessions
 	WHERE id = $1
 	`
+
+	GetQuantityOfReferrers = `
+	SELECT COUNT(*)
+	FROM referrals
+	WHERE referral_owner = $1
+  		AND ($2::timestamptz IS NULL OR referral_timestamp >= $2)
+  		AND ($3::timestamptz IS NULL OR referral_timestamp <= $3);
+	`
+
+	GetRandomUsersByOffset = `
+	SELECT 
+    	w.referred_user_id AS id,
+    	w.username,
+    	w.joined_at
+	FROM UNNEST($1::int[]) WITH ORDINALITY AS o(offset_val, ord)
+	CROSS JOIN LATERAL (
+    SELECT 
+        r.referred_user_id,
+        u.username,
+        r.referral_timestamp AS joined_at
+    FROM referrals r
+    JOIN users u ON u.id = r.referred_user_id
+    WHERE r.referral_owner = $2
+      AND ($3::timestamptz IS NULL OR r.referral_timestamp >= $3)
+      AND ($4::timestamptz IS NULL OR r.referral_timestamp <= $4)
+    ORDER BY r.referral_timestamp ASC, r.referred_user_id ASC
+    LIMIT 1 OFFSET o.offset_val
+	) w
+	ORDER BY o.ord;
+	`
 )
