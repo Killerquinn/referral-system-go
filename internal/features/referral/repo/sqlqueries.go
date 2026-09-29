@@ -34,7 +34,7 @@ const (
     OR (r.referral_timestamp, r.referred_user_id) < ($2, $3)
   	)
 	ORDER BY r.referral_timestamp DESC, r.referred_user_id DESC
-	LIMIT $4;
+	LIMIT $4
 	`
 
 	GetReferralsByOwnUserID = `
@@ -51,10 +51,14 @@ const (
     OR (r.referral_timestamp, r.referred_user_id) < ($2, $3)
   	)
 	ORDER BY r.referral_timestamp DESC, r.referred_user_id DESC
-	LIMIT $4;
+	LIMIT $4
 	`
 
 	CheckIfUserIsBanned = `
-	
+	SELECT
+		is_blocked
+	FROM
+		user_sessions
+	WHERE id = $1
 	`
 )

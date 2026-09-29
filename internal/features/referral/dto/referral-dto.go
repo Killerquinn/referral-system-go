@@ -4,22 +4,22 @@ import "time"
 
 type (
 	SeeWhoseReferralAlreadyRequest struct {
-		Username string
+		Username string `json:"username"`
 	}
 	SeeWhoseReferralAlreadyResponse struct {
-		Referrer      string
-		ReferrerURL   string
-		ReferralSince time.Time
-		Message       string
+		Referrer      string    `json:"referrer"`
+		ReferrerURL   string    `json:"referrer_url"`
+		ReferralSince time.Time `json:"referral_since"`
+		Message       string    `json:"message"`
 	}
 	ContestBetweenReferralsRequest struct {
 	}
 	ContestBetweenReferralsResponse struct {
 	}
 	CurrentReferralListRequest struct {
-		Identifier string
-		Limit      int
-		Cursor     string
+		Identifier string `json:"indentifier"`
+		Limit      int    `json:"limit"`
+		Cursor     string `json:"cursor"`
 	}
 
 	ReferralListParams struct {
