@@ -17,6 +17,7 @@ import (
 type UserService interface {
 	CompareAndChangePassword(ctx context.Context, userID string, oldPassword string, newPassword string) (err error)
 	ChangeUsersCurrentReferrer(ctx context.Context, userID string, referralString string) (newTryWillBeAfter time.Duration, err error)
+	DeleteAccount(ctx context.Context, userID string, password string) error
 }
 type UserHandler struct {
 	uService UserService
@@ -133,6 +134,35 @@ func (uh *UserHandler) ChangeReferrer(w http.ResponseWriter, r *http.Request) {
 
 	responseReturn(w, http.StatusOK, resp)
 
+}
+
+func (uh *UserHandler) DeleteUsersAccount(w http.ResponseWriter, r *http.Request) {
+	const op = "internal/features/user/http/handler.go DeleteUsersAccount"
+
+	userID, ok := r.Context().Value("user_id").(string)
+	if !ok {
+		responseReturn(w, http.StatusUnauthorized, dto.DeleteAccountResponse{Message: "status: unauthorized"})
+		return
+	}
+
+	var req dto.DeleteAccountRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		responseReturn(w, http.StatusBadRequest, dto.DeleteAccountResponse{Message: "error invalid body"})
+		return
+	}
+
+	if err := uh.uService.DeleteAccount(r.Context(), userID, req.Password); err != nil {
+		if errors.Is(err, ErrInvalidCreds) {
+			responseReturn(w, http.StatusBadRequest, dto.DeleteAccountResponse{Message: "invalid credentials"})
+			return
+		}
+
+		responseReturn(w, http.StatusInternalServerError, dto.DeleteAccountResponse{Message: "internal server error"})
+		return
+	}
+
+	responseReturn(w, http.StatusOK, dto.DeleteAccountResponse{Message: "account successfully deleted"})
 }
 
 func responseReturn(w http.ResponseWriter, status int, resp any, headers ...httpfeatures.Header) {

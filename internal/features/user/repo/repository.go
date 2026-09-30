@@ -50,7 +50,7 @@ func (db *Repository) GetConn() (*pgxpool.Conn, error) {
 	return conn, err
 }
 
-func (r *Repository) PullOldPassword(ctx context.Context, userID uuid.UUID) (oldPass []byte, err error) {
+func (r *Repository) PullPassword(ctx context.Context, userID uuid.UUID) (cuurentpass []byte, err error) {
 	const op = "/internal/features/user/repo.PullOldPassword"
 
 	conn, err := r.GetConn()
@@ -174,4 +174,22 @@ func (r *Repository) IfReferrerExist(ctx context.Context, refcode string) (err e
 	}
 
 	return nil
+}
+
+func (r *Repository) CheckAndDeleteUsersAccount(ctx context.Context, userID string) error {
+	const op = "/internal/features/user/repo/repository.go CheckAndDeleteUsersAccount"
+
+	conn, err := r.GetConn()
+	if err != nil {
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	defer conn.Release()
+
+	//To-Do: make two queries within transaction, 1 query deletes all referrals table where he is owner and where he is referral
+	//all users with referred by with deleted account must have empty referred by field & last time reffered timestamp have to be reseted
+	//then delete user
+	//if all is oke - tx.Commit()
+
+	panic("implement me!")
 }

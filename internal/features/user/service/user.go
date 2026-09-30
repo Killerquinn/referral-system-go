@@ -13,13 +13,14 @@ import (
 )
 
 type Uservice struct {
-	log        *zap.Logger
-	credChange credentialsChange
-	refOpts    referralOptions
+	log            *zap.Logger
+	credChange     credentialsChange
+	refOpts        referralOptions
+	accountOptions accountOptions
 }
 
 type credentialsChange interface {
-	PullOldPassword(ctx context.Context, userID uuid.UUID) (oldPass []byte, err error)
+	PullPassword(ctx context.Context, userID uuid.UUID) (cuurentpass []byte, err error)
 	ChangePassword(ctx context.Context, userID uuid.UUID, newPassword []byte) (err error)
 }
 
@@ -29,15 +30,21 @@ type referralOptions interface {
 	IfReferrerExist(ctx context.Context, refcode string) (err error)
 }
 
+type accountOptions interface {
+	CheckAndDeleteUsersAccount(ctx context.Context, userID string) error
+}
+
 func New(
 	log *zap.Logger,
 	changeCreds credentialsChange,
 	referralOptions referralOptions,
+	accountOptions accountOptions,
 ) *Uservice {
 	return &Uservice{
-		log:        log,
-		credChange: changeCreds,
-		refOpts:    referralOptions,
+		log:            log,
+		credChange:     changeCreds,
+		refOpts:        referralOptions,
+		accountOptions: accountOptions,
 	}
 }
 
@@ -57,7 +64,7 @@ func (u *Uservice) CompareAndChangePassword(ctx context.Context, userID string, 
 		return fmt.Errorf("%s:%w", op, sharederrors.ErrInvalidUUID)
 	}
 
-	oldpass, err := u.credChange.PullOldPassword(ctx, useruuid)
+	oldpass, err := u.credChange.PullPassword(ctx, useruuid)
 	if err != nil {
 		return fmt.Errorf("%s:%w", op, err)
 	}
@@ -138,6 +145,43 @@ func (u *Uservice) ChangeUsersCurrentReferrer(ctx context.Context, userID string
 
 	nextCoolDown := now.AddDate(0, 1, 0).Sub(now)
 	return nextCoolDown, nil
+}
+
+func (u *Uservice) DeleteAccount(ctx context.Context, userID string, password string) error {
+	const op = "/internal/features/user/service/user.go DeleteAccount"
+
+	log := u.log.With(
+		zap.String("user id", userID),
+		zap.String("op", op),
+	)
+
+	log.Info("preparing account for deletion")
+
+	//To-Do: pause account on 30 days befere deletion
+
+	userUUID, err := uuid.Parse(userID)
+	if err != nil {
+		log.Error("error occured", zap.Error(err))
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	actualPassword, err := u.credChange.PullPassword(ctx, userUUID)
+	if err != nil {
+
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	if err := bcrypt.CompareHashAndPassword(actualPassword, []byte(password)); err != nil {
+		return sharederrors.ErrInvalidCreds
+	}
+
+	if err := u.accountOptions.CheckAndDeleteUsersAccount(ctx, userID); err != nil {
+		log.Error("error occured", zap.Error(err))
+
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	return nil
 }
 
 func isOlderThenOneMonth(timestamp time.Time) (bool, time.Duration) {

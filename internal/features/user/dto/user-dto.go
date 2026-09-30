@@ -16,4 +16,11 @@ type (
 		ReferralCooldown string
 		Message          string
 	}
+
+	DeleteAccountRequest struct {
+		Password string
+	}
+	DeleteAccountResponse struct {
+		Message string
+	}
 )
