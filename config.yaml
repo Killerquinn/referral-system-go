@@ -16,7 +16,7 @@ postgres:
   health_check_period: 10s
 
 stripe:
-  secret_key: "sk_test_..."
+  secret_key: "sk_test_..." 
   webhook_secret: "whsec_..."
 
 jaeger:
