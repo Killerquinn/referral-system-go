@@ -18,14 +18,15 @@ type Session struct {
 }
 
 type User struct {
-	ID              uuid.UUID `db:"id"`
-	Username        string    `db:"username"`
-	Email           string    `db:"email"`
-	HashedPassword  []byte    `db:"hashed_password"`
-	OwnReferral     string    `db:"own_referral"`
-	ReferredBy      string    `db:"referred_by"`
-	LastTimeRefUsed time.Time `db:"last_time_refused"`
-	CreatedAt       time.Time `db:"created_at"`
+	ID              uuid.UUID  `db:"id"`
+	Username        string     `db:"username"`
+	Email           string     `db:"email"`
+	HashedPassword  []byte     `db:"hashed_password"`
+	OwnReferral     *string    `db:"own_referral_key"`
+	ReferredBy      *string    `db:"referred_by_id"`
+	LastTimeRefUsed *time.Time `db:"last_time_ref_used"`
+	IsBlocked       bool       `db:"is_blocked"`
+	CreatedAt       time.Time  `db:"created_at"`
 }
 
 func (s *Session) IsExpired() bool {

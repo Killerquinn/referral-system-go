@@ -5,9 +5,10 @@ CREATE TABLE users(
     username VARCHAR(25) NOT NULL UNIQUE, --To-Do: update your database due to field changes
     email VARCHAR(255) NOT NULL UNIQUE,
     hashed_password VARCHAR(255) NOT NULL,
-    own_referral_key VARCHAR(255) NOT NULL UNIQUE,
+    own_referral_key VARCHAR(255) UNIQUE,
     referred_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
-    last_time_ref_used TIMESTAMPTZ, 
+    last_time_ref_used TIMESTAMPTZ,
+    is_blocked BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -17,14 +18,13 @@ CREATE TABLE user_sessions (
     refresh_token_hash VARCHAR(255) NOT NULL,
     user_agent VARCHAR(255),
     client_ip VARCHAR(45),
-    is_blocked BOOLEAN DEFAULT FALSE,
     expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 CREATE TABLE referrals(
-    referral_owner UUID REFERENCES users(id),
-    referred_user_id UUID REFERENCES users(id),
+    referral_owner UUID REFERENCES users(id) ON DELETE CASCADE,
+    referred_user_id UUID REFERENCES users(id) ON DELETE CASCADE,
     referral_timestamp TIMESTAMPTZ DEFAULT NOW(),
     PRIMARY KEY (referral_owner, referred_user_id)
 );
@@ -44,5 +44,5 @@ CREATE TABLE giveaway_attendee(
     PRIMARY KEY (gw_id, gw_user_id)
 );
 
-CREATE INDEX idx_referrals_referrer_joined ON referrals(referrer_id, referral_timestamp);
+CREATE INDEX idx_referrals_referrer_joined ON referrals(referral_owner, referral_timestamp);
 

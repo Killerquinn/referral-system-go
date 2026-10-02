@@ -51,31 +51,31 @@ func (r *Repository) GetConn() (*pgxpool.Conn, error) {
 	return conn, err
 }
 
-func (r *Repository) User(ctx context.Context, email string) (*auth.User, error) {
+func (r *Repository) User(ctx context.Context, email string) (auth.User, error) {
 	const op = "user/repo.User"
 
 	conn, err := r.GetConn()
 	if err != nil {
-		return nil, fmt.Errorf("%s:%w", op, err)
+		return auth.User{}, fmt.Errorf("%s:%w", op, err)
 	}
 
 	defer conn.Release()
 
 	rows, err := conn.Query(ctx, getUserByEmail, email)
 	if err != nil {
-		return nil, fmt.Errorf("%s:%w", op, err)
+		return auth.User{}, fmt.Errorf("%s:%w", op, err)
 	}
 	defer rows.Close()
 
 	user, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[auth.User])
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, sharederrors.ErrUserNotFound
+			return auth.User{}, sharederrors.ErrUserNotFound
 		}
-		return nil, fmt.Errorf("%s:%w", op, err)
+		return auth.User{}, fmt.Errorf("%s:%w", op, err)
 	}
 
-	return &user, nil
+	return user, nil
 }
 
 func (r *Repository) UserExists(ctx context.Context, email string) (bool, error) { //To-Do: make repository shared to avoid connection collisions and else(I'm building monolith, not microservices)
@@ -89,7 +89,7 @@ func (r *Repository) UserExists(ctx context.Context, email string) (bool, error)
 
 	var isUserExist bool
 
-	err = conn.QueryRow(ctx, selectIfUserExist).Scan(&isUserExist)
+	err = conn.QueryRow(ctx, selectIfUserExist, email).Scan(&isUserExist)
 	if err != nil {
 		return true, fmt.Errorf("%s:%w", op, err)
 	}
@@ -117,7 +117,7 @@ func (r *Repository) SaveNewUser(ctx context.Context, username string, email str
 		if pgerr, ok := err.(*pgconn.PgError); ok && pgerr.Code == "23505" {
 			return "", sharederrors.ErrUserAlreadyRegistered
 		}
-		return "", fmt.Errorf("%s:failed to create user", op)
+		return "", fmt.Errorf("%s:%w", op, err)
 	}
 
 	return id, nil
@@ -125,7 +125,7 @@ func (r *Repository) SaveNewUser(ctx context.Context, username string, email str
 }
 
 func (r *Repository) CreateSession(ctx context.Context, userID uuid.UUID, hashedRefreshToken string, userAgent string, clientIP string, expiresAt time.Time) (refreshToken []byte, err error) {
-	const op = "user/repo.LoginUser"
+	const op = "user/repo.CreateSession"
 
 	conn, err := r.GetConn()
 	if err != nil {
@@ -133,33 +133,16 @@ func (r *Repository) CreateSession(ctx context.Context, userID uuid.UUID, hashed
 	}
 	defer conn.Release()
 
-	var rToken []byte
+	var rToken string
 
-	err = conn.QueryRow(ctx, postSession, userID, hashedRefreshToken, userAgent, clientIP, expiresAt).Scan(&rToken)
+	uid := userID.String()
+
+	err = conn.QueryRow(ctx, postSession, uid, hashedRefreshToken, userAgent, clientIP, expiresAt).Scan(&rToken)
 	if err != nil {
 		return nil, fmt.Errorf("%s:%w", op, err)
 	}
 
-	return rToken, nil
-}
-
-func (r *Repository) UserIsBlocked(ctx context.Context, userID string) (bool, error) {
-	const op = "user/repo.UserIsBlocked"
-
-	conn, err := r.GetConn()
-	if err != nil {
-		return true, fmt.Errorf("%s:%w", op, err)
-	}
-	defer conn.Release()
-
-	var isblocked bool
-
-	err = conn.QueryRow(ctx, selectIfUserBanned, userID).Scan(&isblocked)
-	if err != nil {
-		return true, fmt.Errorf("%s:%w", op, err)
-	}
-
-	return isblocked, nil
+	return []byte(rToken), nil
 }
 
 func (r *Repository) DeleteCurrentSession(ctx context.Context, userUUID uuid.UUID) error {

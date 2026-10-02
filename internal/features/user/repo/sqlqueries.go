@@ -48,4 +48,16 @@ const (
 		WHERE own_referral_key = $1
 	)
 	`
+
+	DeleteUser = `
+	DELETE
+	FROM users 
+	WHERE id = $1
+	`
+
+	UpdateReferralsCooldown = `
+	UPDATE users
+	SET last_time_ref_used = NULL
+	WHERE referred_by_id = $1
+	`
 )

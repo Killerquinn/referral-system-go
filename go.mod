@@ -16,6 +16,7 @@ require (
 	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/knadh/koanf/maps v0.1.2 // indirect
 	github.com/knadh/koanf/parsers/dotenv v1.1.1 // indirect
+	github.com/knadh/koanf/parsers/yaml v1.1.1 // indirect
 	github.com/knadh/koanf/providers/env v1.1.0 // indirect
 	github.com/knadh/koanf/providers/file v1.2.1 // indirect
 	github.com/knadh/koanf/v2 v2.3.4 // indirect

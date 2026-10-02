@@ -47,13 +47,13 @@ func (m mockSessionRegister) DeleteCurrentSession(ctx context.Context, userID uu
 }
 
 type mockNewUser struct {
-	user        *auth.User
+	user        auth.User
 	userErr     error
 	savedUserID string
 	saveErr     error
 }
 
-func (m mockNewUser) User(ctx context.Context, email string) (*auth.User, error) {
+func (m mockNewUser) User(ctx context.Context, email string) (auth.User, error) {
 	return m.user, m.userErr
 }
 
@@ -123,7 +123,7 @@ func TestLogin(t *testing.T) {
 	ttl := 30 * 24 * time.Hour
 
 	passHash, _ := bcrypt.GenerateFromPassword([]byte("correct_password"), bcrypt.DefaultCost)
-	validUser := &auth.User{
+	validUser := auth.User{
 		ID:             uuid.New(),
 		HashedPassword: passHash,
 	}

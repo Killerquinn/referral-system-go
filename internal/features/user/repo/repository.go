@@ -191,5 +191,24 @@ func (r *Repository) CheckAndDeleteUsersAccount(ctx context.Context, userID stri
 	//then delete user
 	//if all is oke - tx.Commit()
 
-	panic("implement me!")
+	tx, err := conn.BeginTx(ctx, pgx.TxOptions{})
+
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, UpdateReferralsCooldown, userID); err != nil {
+
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	if _, err := tx.Exec(ctx, DeleteUser, userID); err != nil {
+
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	return nil
 }

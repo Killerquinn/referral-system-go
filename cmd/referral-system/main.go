@@ -86,8 +86,10 @@ func LoggerSetup(env string) *zap.Logger {
 	}
 
 	zapCfg := zap.Config{
-		Level:       level,
-		Development: development,
+		Level:            level,
+		Development:      development,
+		OutputPaths:      []string{"stdout"},
+		ErrorOutputPaths: []string{"stderr"},
 		Sampling: &zap.SamplingConfig{
 			Initial:    100,
 			Thereafter: 100,
@@ -107,6 +109,9 @@ func LoggerSetup(env string) *zap.Logger {
 			EncodeCaller:   zapcore.ShortCallerEncoder,
 		},
 	}
-	zapLogger, _ := zapCfg.Build()
+	zapLogger, err := zapCfg.Build()
+	if err != nil {
+		fmt.Print("error in logger setup")
+	}
 	return zapLogger
 }

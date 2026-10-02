@@ -7,7 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/knadh/koanf/parsers/dotenv"
+	"github.com/joho/godotenv"
+	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/env"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
@@ -21,7 +22,8 @@ type Config struct {
 	Stripe   StripeConfig
 	Jaeger   JaegerConfig
 	//Prometheus PrometheusConfig
-	JWT JWTokenConfig
+	JWT  JWTokenConfig
+	Opts Options
 }
 
 type ServerConfig struct {
@@ -44,56 +46,82 @@ type PostgresConfig struct {
 }
 
 type StripeConfig struct {
-	SecretKey     string `koanf:"secret_key"`
-	WebhookSecret string `koanf:"webhook_secret"`
+	SecretKey     string `koanf:"APP_STRIPE_SECRET_KEY"`
+	WebhookSecret string `koanf:"APP_STRIPE_WEBHOOK_SECRET"`
 }
 
 type JaegerConfig struct {
-	Endpoint string
+	Endpoint string  `koanf:"endpoint"`
 	Sampler  float64 `koanf:"sampler" default:"1.0"`
 }
 
 type JWTokenConfig struct {
-	Secret string //To-Do: make tokenizer!
-	TTL    time.Time
+	Secret string        `koanf:"JWT_SECRET"` //To-Do: make tokenizer!
+	TTL    time.Duration `koanf:"ttl"`
+}
+
+type Options struct {
+	BaseUrl string `koanf:"baseurl"`
 }
 
 func LoadConfig() *Config {
-	k = koanf.New(".")
-	if err := k.Load(file.Provider(".env"), dotenv.Parser()); err != nil {
-		fmt.Println("Error loading config, .env files not found, continue? (y/n)", err)
-		if !AskToContinue("Continue config loading without .env variables?") {
-			fmt.Println("Exiting...")
-			os.Exit(1)
-		}
-		fmt.Println("Continuing loading without .env variables...")
+	k := koanf.New(".")
+
+	_ = godotenv.Load()
+
+	configPath := findConfigFile()
+	if err := k.Load(file.Provider(configPath), yaml.Parser()); err != nil {
+		fmt.Printf("Warning: %s not found, relying on env vars\n", configPath)
 	}
-	if err := k.Load(env.Provider("APP_", ".", func(s string) string {
-		return strings.ReplaceAll(strings.ToLower(strings.TrimPrefix(s, "APP_")), "_", ".")
+
+	if err := k.Load(env.Provider("", ".", func(s string) string {
+		switch s {
+		case "APP_POSTGRES_DSN":
+			return "postgres.dsn"
+		case "STRIPE_SECRET_KEY":
+			return "stripe.secret_key"
+		case "STRIPE_WEBHOOK_SECRET":
+			return "stripe.webhook_secret"
+		case "JWT_SECRET":
+			return "jwt.secret"
+		default:
+			return strings.ToLower(s)
+		}
 	}), nil); err != nil {
-		log.Fatal(err)
+		log.Fatalf("Error loading env vars: %v", err)
 	}
 
 	var cfg Config
-
 	if err := k.Unmarshal("", &cfg); err != nil {
-		log.Fatal(err)
+		log.Fatalf("Error unmarshaling config: %v", err)
 	}
 
 	if cfg.Server.Port == 0 {
-		log.Println("No port specified, defaulting to 8080")
 		cfg.Server.Port = 8080
 	}
 	if cfg.Server.Env == "" {
 		cfg.Server.Env = "development"
-		fmt.Println("No environment specified, defaulting to development")
 	}
 	if cfg.Server.Name == "" {
 		cfg.Server.Name = "local_project"
-		fmt.Println("No name specified, defaulting to local_project")
 	}
 
 	return &cfg
+}
+
+func findConfigFile() string {
+	paths := []string{
+		"config.yaml",
+		"./config.yaml",
+		"../../config.yaml",
+	}
+
+	for _, p := range paths {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return "config.yaml"
 }
 
 func Get(key string) interface{} {

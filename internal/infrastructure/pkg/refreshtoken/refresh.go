@@ -3,16 +3,17 @@ package refreshtoken
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 )
 
-func GenerateRefreshToken() ([]byte, error) {
+func GenerateRefreshToken() (string, error) {
 	b := make([]byte, 32)
 	_, err := rand.Read(b)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	return b, nil
+	return hex.EncodeToString(b), nil
 }
 
 func UnhashToken(b []byte) (string, error) {

@@ -88,6 +88,10 @@ func (h *HandlerRest) UserLogIn(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid credentials", http.StatusUnauthorized)
 			return
 		}
+		if errors.Is(err, sharederrors.ErrUserNotFound) {
+			http.Error(w, "invalid credentials", http.StatusNotFound)
+			return
+		}
 		http.Error(w, fmt.Sprintf("%s:%s", op, "internal status error"), http.StatusInternalServerError)
 		return
 	}

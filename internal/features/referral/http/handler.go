@@ -32,9 +32,9 @@ func NewRefferalHandler(rs ReferralService) *ReferralHandler {
 func Register(r chi.Router, rs ReferralService) {
 	rh := NewRefferalHandler(rs)
 
-	r.Get("api/v1/referrals/{identifier}", rh.CurrentReferralList)
-	r.Post("api/v1/referrals/draw", rh.ContestBetweenReferrals)
-	r.Get("api/v1/{identifier}/refferer", rh.SeeWhoseReferralAlready)
+	r.Get("/api/v1/referrals/{identifier}", rh.CurrentReferralList)
+	r.Post("/api/v1/referrals/draw", rh.ContestBetweenReferrals)
+	r.Get("/api/v1/{identifier}/refferer", rh.SeeWhoseReferralAlready)
 }
 
 const (

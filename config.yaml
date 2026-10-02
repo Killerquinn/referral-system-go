@@ -1,0 +1,30 @@
+server:
+  port: 8080
+  env: local # development, production, local
+  name: referral-service
+  read_timeout: 5s
+  read_header_timeout: 5s
+  idle_timeout: 5s
+  write_timeout: 5s
+
+postgres:
+  dsn: "postgres://user:password@localhost:5432/referral_db?sslmode=disable"
+  max_connections: 20
+  min_connections: 5
+  max_connection_lifetime: 1h
+  max_connection_idle_time: 30m
+  health_check_period: 10s
+
+stripe:
+  secret_key: "sk_test_..."
+  webhook_secret: "whsec_..."
+
+jaeger:
+  endpoint: "http://localhost:14268/api/traces"
+  sampler: 1.0
+
+jwt:
+  ttl: "24h"
+
+options:
+  baseurl: "https://myapp.com/"

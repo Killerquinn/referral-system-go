@@ -27,7 +27,6 @@ type Auth struct {
 type userAuth interface {
 	UserExists(ctx context.Context, email string) (bool, error)
 	//CredsMatch(ctx context.Context, email string, password []byte) (matched bool, err error) //To-Do: resolve that
-	UserIsBlocked(ctx context.Context, userID string) (bool, error)
 }
 
 type sessionRegister interface {
@@ -36,7 +35,7 @@ type sessionRegister interface {
 }
 
 type newUser interface {
-	User(ctx context.Context, email string) (*auth.User, error) //get user
+	User(ctx context.Context, email string) (auth.User, error) //get user
 	SaveNewUser(ctx context.Context, username string, email string, password []byte) (uid string, err error)
 }
 
@@ -68,19 +67,23 @@ func (auth *Auth) RegisterUser(ctx context.Context, username string, email strin
 
 	exist, err := auth.userAuth.UserExists(ctx, email)
 	if err != nil {
+		log.Error("error", zap.Error(err))
 		return "", fmt.Errorf("%s:%w", op, err)
 	}
 	if exist {
+		log.Error("error", zap.Error(err))
 		return "", sharederrors.ErrUserAlreadyRegistered
 	}
 
 	hashedPass, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
+		log.Error("error", zap.Error(err))
 		return "", fmt.Errorf("%s:%w", op, err)
 	}
 
 	id, err := auth.newUser.SaveNewUser(ctx, username, email, hashedPass)
 	if err != nil {
+		log.Error("error", zap.Error(err))
 		return "", fmt.Errorf("%s:%w", op, err)
 	}
 
@@ -95,12 +98,10 @@ func (auth *Auth) Login(ctx context.Context, email string, password string, user
 	)
 	log.Info("start proccess of logging ig new user")
 
-	exist, err := auth.userAuth.UserExists(ctx, email)
-	if err != nil {
-		return "", "", fmt.Errorf("%s:%w", op, err)
-	}
-	if !exist {
-		return "", "", fmt.Errorf("%s:%s", op, "user doesnt even exist!")
+	_, err = auth.userAuth.UserExists(ctx, email)
+	if err == nil {
+
+		return "", "", sharederrors.ErrUserNotFound
 	}
 
 	user, err := auth.newUser.User(ctx, email)
@@ -108,14 +109,12 @@ func (auth *Auth) Login(ctx context.Context, email string, password string, user
 		if errors.Is(err, sharederrors.ErrUserNotFound) { //To-Do: add errors to shared
 			return "", "", sharederrors.ErrUserNotFound
 		}
+		log.Error("117 - error", zap.Error(err))
 		return "", "", fmt.Errorf("%s:%w", op, err)
 	}
 
-	blocked, err := auth.userAuth.UserIsBlocked(ctx, user.ID.String())
-	if err != nil {
-		return "", "", fmt.Errorf("Cannot get user status")
-	}
-	if blocked {
+	if user.IsBlocked {
+		log.Error("127 - error", zap.Error(err))
 		return "", "", fmt.Errorf("User is currently blocked")
 	}
 
@@ -127,21 +126,25 @@ func (auth *Auth) Login(ctx context.Context, email string, password string, user
 
 	refreshToken, err := refreshtoken.GenerateRefreshToken()
 	if err != nil {
+		log.Error("139 - error", zap.Error(err))
 		return "", "", fmt.Errorf("%s:%w", op, err)
 	}
 
 	accessToken, err := jwt.GenerateAccessToken(user.ID.String(), string(auth.jwtsecret))
 	if err != nil {
+		log.Error("145 - error", zap.Error(err))
 		return "", "", fmt.Errorf("%s:%w", op, err)
 	}
 
-	rToken, err := auth.sRegister.CreateSession(ctx, user.ID, string(refreshToken), userAgent, userIP, time.Now().Add(auth.tokenTTL))
+	rToken, err := auth.sRegister.CreateSession(ctx, user.ID, refreshToken, userAgent, userIP, time.Now().Add(auth.tokenTTL))
 	if err != nil {
+		log.Error("151 - error", zap.Error(err))
 		return "", "", fmt.Errorf("%s:%w", op, err)
 	}
 
 	preparedRToken, err := refreshtoken.UnhashToken(rToken)
 	if err != nil {
+		log.Error("157 - error", zap.Error(err))
 		return "", "", fmt.Errorf("%s:%w", op, err)
 	}
 

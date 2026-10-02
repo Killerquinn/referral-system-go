@@ -6,6 +6,8 @@ import (
 	"github.com/killerquinn/referral-system-go/internal/config"
 	authrepopackage "github.com/killerquinn/referral-system-go/internal/features/auth/repo"
 	authservice "github.com/killerquinn/referral-system-go/internal/features/auth/service"
+	referralrepopackage "github.com/killerquinn/referral-system-go/internal/features/referral/repo"
+	referralservice "github.com/killerquinn/referral-system-go/internal/features/referral/service"
 	userrepopackage "github.com/killerquinn/referral-system-go/internal/features/user/repo"
 	userservice "github.com/killerquinn/referral-system-go/internal/features/user/service"
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/http/rest"
@@ -21,6 +23,8 @@ func New(logger *zap.Logger, port int, tokenTTL time.Duration, cfg *config.Confi
 
 	//AUTH INTERFACES
 
+	logger.Info("start loading auth interfaces")
+
 	authstorage := authrepopackage.New(cfg.Postgres.DSN)
 
 	secret := cfg.JWT.Secret
@@ -35,6 +39,8 @@ func New(logger *zap.Logger, port int, tokenTTL time.Duration, cfg *config.Confi
 
 	//USER INTERFACES
 
+	logger.Info("start loading user interfaces")
+
 	userqueries := userrepopackage.New(cfg.Postgres.DSN)
 
 	userService := userservice.New(
@@ -46,7 +52,17 @@ func New(logger *zap.Logger, port int, tokenTTL time.Duration, cfg *config.Confi
 
 	//add referral feature there
 
-	app := rest.NewApp(logger, cfg, authService, userService)
+	logger.Info("start loading referral interfaces")
+
+	referralrepo := referralrepopackage.New(cfg.Postgres.DSN)
+
+	referralService := referralservice.New(
+		logger,
+		cfg.Opts.BaseUrl,
+		referralrepo,
+	)
+
+	app := rest.NewApp(logger, cfg, authService, userService, referralService)
 
 	return &App{
 		RestServer: app,
