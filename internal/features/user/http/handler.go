@@ -32,6 +32,7 @@ func Register(r chi.Router, us UserService) {
 
 	r.Put("/user/changepassword", h.ChangeUserPassword)
 	r.Put("/user/changerefferer", h.ChangeReferrer)
+	r.Delete("/user/deleteaccount", h.DeleteUsersAccount)
 }
 
 var (

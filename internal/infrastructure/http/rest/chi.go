@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/killerquinn/referral-system-go/internal/config"
 	authhttphandler "github.com/killerquinn/referral-system-go/internal/features/auth/http-handler"
+	httphandler "github.com/killerquinn/referral-system-go/internal/features/auth/http-handler"
 	authservice "github.com/killerquinn/referral-system-go/internal/features/auth/service"
 	referralhttphandler "github.com/killerquinn/referral-system-go/internal/features/referral/http"
 	referralservice "github.com/killerquinn/referral-system-go/internal/features/referral/service"
@@ -42,8 +43,14 @@ func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *u
 
 	r.Use(middleware.RealIP)
 
+	newAuthHandler := httphandler.NewAuthHandler(auth)
+	_ = userhttphandler.NewUserHandler(user)
+	_ = referralhttphandler.NewRefferalHandler(referral)
+
 	r.Group(func(r chi.Router) {
 		r.Use(localmdw.AuthMiddleware(cfg.JWT.Secret))
+
+		r.Delete("/auth/logout", newAuthHandler.UserLogOut)
 	})
 
 	log.Info("setup server")

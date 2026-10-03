@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/killerquinn/referral-system-go/internal/features/auth/dto"
+	"github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/jwtcontext"
 	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
 )
 
@@ -32,7 +33,6 @@ func Register(r chi.Router, as AuthService) {
 
 	r.Post("/auth/register", h.RegisterNewUser)
 	r.Post("/auth/login", h.UserLogIn)
-	r.Delete("/auth/logout", h.UserLogOut)
 }
 
 var (
@@ -108,21 +108,15 @@ func (h *HandlerRest) UserLogIn(w http.ResponseWriter, r *http.Request) {
 func (h *HandlerRest) UserLogOut(w http.ResponseWriter, r *http.Request) {
 	const op = "handler.Logout"
 
-	userID, ok := r.Context().Value("user_id").(string)
+	userID, ok := r.Context().Value(jwtcontext.UserIDKey).(string)
 	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	var req dto.LogoutUserRequest
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("%s:%s", op, "invalid body"), http.StatusBadRequest)
-		return
-	}
-
 	if err := h.service.Logout(r.Context(), userID); err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")

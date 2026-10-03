@@ -25,6 +25,7 @@ jaeger:
 
 jwt:
   ttl: "24h"
+  secret_key: "supersecret"
 
 options:
   baseurl: "https://myapp.com/"

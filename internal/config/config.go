@@ -56,7 +56,7 @@ type JaegerConfig struct {
 }
 
 type JWTokenConfig struct {
-	Secret string        `koanf:"JWT_SECRET"` //To-Do: make tokenizer!
+	Secret string        `koanf:"secret_key"` //To-Do: make tokenizer!
 	TTL    time.Duration `koanf:"ttl"`
 }
 
@@ -82,8 +82,8 @@ func LoadConfig() *Config {
 			return "stripe.secret_key"
 		case "STRIPE_WEBHOOK_SECRET":
 			return "stripe.webhook_secret"
-		case "JWT_SECRET":
-			return "jwt.secret"
+		case "APP_JWT_SECRET_KEY":
+			return "jwt.secret_key"
 		default:
 			return strings.ToLower(s)
 		}
@@ -105,6 +105,8 @@ func LoadConfig() *Config {
 	if cfg.Server.Name == "" {
 		cfg.Server.Name = "local_project"
 	}
+
+	fmt.Printf("cfg.JWT.Secret is - %s", cfg.JWT.Secret)
 
 	return &cfg
 }
