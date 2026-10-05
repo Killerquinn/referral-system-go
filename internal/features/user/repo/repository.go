@@ -146,7 +146,7 @@ func (r *Repository) ChangeCurrentReferrer(ctx context.Context, userID uuid.UUID
 		return fmt.Errorf("%s:%w", op, err)
 	}
 	defer tx.Rollback(ctx)
-	log.Printf("DEBUG: $1 (referrerID)=%v, $2 (time)=%v, $3 (userID)=%v == $3 (referralID)=%v", referrerID, newTimestamp, userID, referralID)
+	//log.Printf("DEBUG: $1 (referrerID)=%v, $2 (time)=%v, $3 (userID)=%v == $3 (referralID)=%v", referrerID, newTimestamp, userID, referralID)
 	//update user table && referrals table
 	result, err := tx.Exec(ctx, UpdateUsersReferrer, referrerID, newTimestamp, userID)
 	if err != nil {
