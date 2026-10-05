@@ -14,7 +14,7 @@ var (
 	reHasLetter = regexp.MustCompile(`[a-zA-Z]`)
 )
 
-func ValidateChangePassword(req *dto.ChangeUserPasswordRequest) error {
+func ValidateChangePassword(req dto.ChangeUserPasswordRequest) error {
 	return validation.ValidateStruct(&req,
 		validation.Field(&req.NewPass, validation.Required, validation.By(validatePassword)),
 		validation.Field(&req.OldPass, validation.Required),

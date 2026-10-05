@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/killerquinn/referral-system-go/internal/features/user/dto"
 	httpfeatures "github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/http-features"
+	"github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/jwtcontext"
 	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
 )
 
@@ -30,7 +31,6 @@ func NewUserHandler(us UserService) *UserHandler {
 func Register(r chi.Router, us UserService) {
 	h := NewUserHandler(us)
 
-	r.Put("/user/changepassword", h.ChangeUserPassword)
 	r.Put("/user/changerefferer", h.ChangeReferrer)
 	r.Delete("/user/deleteaccount", h.DeleteUsersAccount)
 }
@@ -42,9 +42,9 @@ var (
 func (uh *UserHandler) ChangeUserPassword(w http.ResponseWriter, r *http.Request) {
 	const op = "/internal/features/user/http.ChangeUserPassword"
 
-	userID, ok := r.Context().Value("user_id").(string)
+	userID, ok := r.Context().Value(jwtcontext.UserIDKey).(string)
 	if !ok {
-		responseReturn(w, http.StatusUnauthorized, dto.ChangeUserPasswordResponse{Message: "status: unauthorized"})
+		responseReturn(w, http.StatusUnauthorized, dto.ChangeUserPasswordResponse{Message: "unauthorized"})
 		return
 	}
 
@@ -55,8 +55,8 @@ func (uh *UserHandler) ChangeUserPassword(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := ValidateChangePassword(&req); err != nil {
-		responseReturn(w, http.StatusBadRequest, dto.ChangeUserPasswordResponse{Message: "Unsuitable password"})
+	if err := ValidateChangePassword(req); err != nil {
+		responseReturn(w, http.StatusBadRequest, dto.ChangeUserPasswordResponse{Message: fmt.Sprintf("error %s", err)})
 		return
 	}
 

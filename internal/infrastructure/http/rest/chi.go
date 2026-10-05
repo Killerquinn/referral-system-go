@@ -44,13 +44,14 @@ func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *u
 	r.Use(middleware.RealIP)
 
 	newAuthHandler := httphandler.NewAuthHandler(auth)
-	_ = userhttphandler.NewUserHandler(user)
+	newUserHandler := userhttphandler.NewUserHandler(user)
 	_ = referralhttphandler.NewRefferalHandler(referral)
 
 	r.Group(func(r chi.Router) {
 		r.Use(localmdw.AuthMiddleware(cfg.JWT.Secret))
 
 		r.Delete("/auth/logout", newAuthHandler.UserLogOut)
+		r.Put("/user/changepassword", newUserHandler.ChangeUserPassword)
 	})
 
 	log.Info("setup server")
