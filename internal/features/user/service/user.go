@@ -25,9 +25,10 @@ type credentialsChange interface {
 }
 
 type referralOptions interface {
-	IfAbleToChangeReferrer(ctx context.Context, userID uuid.UUID) (availableafter time.Time, err error)
+	IfAbleToChangeReferrer(ctx context.Context, userID uuid.UUID) (availableafter *time.Time, err error)
 	ChangeCurrentReferrer(ctx context.Context, userID uuid.UUID, refcode string, newTimestamp time.Time) (err error)
 	IfReferrerExist(ctx context.Context, refcode string) (err error)
+	WriteUniqueKey(ctx context.Context, userID string, refCode string) (string, error)
 }
 
 type accountOptions interface {
@@ -104,6 +105,7 @@ func (u *Uservice) ChangeUsersCurrentReferrer(ctx context.Context, userID string
 
 	timestamp, err := u.refOpts.IfAbleToChangeReferrer(ctx, useruuid)
 	if err != nil {
+		log.Error("err", zap.Error(err))
 
 		return 0, fmt.Errorf("%s:%w", op, err)
 	}
@@ -119,7 +121,7 @@ func (u *Uservice) ChangeUsersCurrentReferrer(ctx context.Context, userID string
 
 			return 0, sharederrors.ErrReferrerOrReferralCodeDoesntExist
 		}
-		u.log.Error("internal server error: ", zap.Error(err))
+		log.Error("internal server error: ", zap.Error(err))
 
 		return 0, fmt.Errorf("%s:%w", op, err)
 	}
@@ -145,6 +147,32 @@ func (u *Uservice) ChangeUsersCurrentReferrer(ctx context.Context, userID string
 
 	nextCoolDown := now.AddDate(0, 1, 0).Sub(now)
 	return nextCoolDown, nil
+}
+
+func (u *Uservice) CreateReferralKey(ctx context.Context, userID string, referralkey string) (string, error) {
+	const op = "/internal/features/user/service/user.go CreateReferralKey"
+
+	log := u.log.With(
+		zap.String("op", op),
+		zap.String("userID", userID),
+	)
+
+	log.Info("preparing user to get referral key")
+
+	//To-Do: add more metadata for processing it? i think in future to create new psql table, its need to be more then one field in user table
+
+	createdKey, err := u.refOpts.WriteUniqueKey(ctx, userID, referralkey)
+	if err != nil {
+		if errors.Is(err, sharederrors.ErrNotUnique) {
+
+			return "", sharederrors.ErrNotUnique
+		}
+
+		log.Error(fmt.Sprintf("%s", op), zap.Error(err))
+		return "", fmt.Errorf("%s:%w", op, err)
+	}
+
+	return fmt.Sprintf("now, you are owning '%s' key!", createdKey), nil
 }
 
 func (u *Uservice) DeleteAccount(ctx context.Context, userID string, password string) error {
@@ -184,7 +212,11 @@ func (u *Uservice) DeleteAccount(ctx context.Context, userID string, password st
 	return nil
 }
 
-func isOlderThenOneMonth(timestamp time.Time) (bool, time.Duration) {
+func isOlderThenOneMonth(timestamp *time.Time) (bool, time.Duration) {
+	if timestamp == nil {
+		return true, 0
+	}
+
 	oneMonthAfter := timestamp.AddDate(0, 1, 0)
 	remaining := time.Until(oneMonthAfter)
 

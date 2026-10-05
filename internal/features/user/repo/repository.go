@@ -10,7 +10,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/killerquinn/referral-system-go/internal/domain/auth"
 	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
 )
 
@@ -93,21 +92,22 @@ func (r *Repository) ChangePassword(ctx context.Context, userID uuid.UUID, newPa
 	return nil
 }
 
-func (r *Repository) IfAbleToChangeReferrer(ctx context.Context, userID uuid.UUID) (availableafter time.Time, err error) {
+func (r *Repository) IfAbleToChangeReferrer(ctx context.Context, userID uuid.UUID) (availableafter *time.Time, err error) {
 	const op = "/internal/features/user/repo.IfAbleToChangeReferrer"
 
 	conn, err := r.GetConn()
 	if err != nil {
-		return time.Time{}, fmt.Errorf("%s:%w", op, err)
+		return nil, fmt.Errorf("%s:%w", op, err)
 	}
 
 	defer conn.Release()
 
-	var ableafter time.Time
+	var ableafter *time.Time
+	//todo: Add cache there
 
 	if err := conn.QueryRow(ctx, CheckIfAbleToChangeReferrer, userID).Scan(&ableafter); err != nil {
 
-		return time.Time{}, fmt.Errorf("%s:%w", op, err)
+		return nil, fmt.Errorf("%s:%w", op, err)
 	}
 
 	return ableafter, nil
@@ -124,9 +124,10 @@ func (r *Repository) ChangeCurrentReferrer(ctx context.Context, userID uuid.UUID
 	defer conn.Release()
 
 	//checking if user doesnt tries to be referrer to himself
-	var referredUser auth.User
-	var referrer auth.User
-	if err = conn.QueryRow(ctx, CheckOnSelfReferralAndFindReferrerID, refcode, userID).Scan(&referredUser.ID, &referredUser.LastTimeRefUsed, &referredUser.ReferredBy, &referrer.ReferredBy); err != nil {
+	var referralID string
+	var referrerID string
+	var referrerReferredBy *string
+	if err = conn.QueryRow(ctx, CheckOnSelfReferralAndFindReferrerID, userID, refcode).Scan(&referralID, &referrerID, &referrerReferredBy); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 
 			return sharederrors.ErrSelfReferred
@@ -134,8 +135,20 @@ func (r *Repository) ChangeCurrentReferrer(ctx context.Context, userID uuid.UUID
 
 		return fmt.Errorf("%s:%w", op, err)
 	}
+	if referrerReferredBy != nil {
+		if referralID == *referrerReferredBy {
+			return sharederrors.ErrSelfReferred //referral loop
+		}
+	}
+
+	tx, err := conn.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("%s:%w", op, err)
+	}
+	defer tx.Rollback(ctx)
+	log.Printf("DEBUG: $1 (referrerID)=%v, $2 (time)=%v, $3 (userID)=%v == $3 (referralID)=%v", referrerID, newTimestamp, userID, referralID)
 	//update user table && referrals table
-	result, err := conn.Exec(ctx, UpdateUsersReferrer, referrer.ID, newTimestamp, referredUser.ID)
+	result, err := tx.Exec(ctx, UpdateUsersReferrer, referrerID, newTimestamp, userID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 
@@ -147,6 +160,10 @@ func (r *Repository) ChangeCurrentReferrer(ctx context.Context, userID uuid.UUID
 
 	affectedrows := result.RowsAffected()
 	if affectedrows == 0 {
+		return fmt.Errorf("%s:%s", op, "nothing changed")
+	}
+
+	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("%s:%w", op, err)
 	}
 
@@ -211,4 +228,28 @@ func (r *Repository) CheckAndDeleteUsersAccount(ctx context.Context, userID stri
 	}
 
 	return nil
+}
+
+func (r *Repository) WriteUniqueKey(ctx context.Context, userID string, refCode string) (string, error) {
+	const op = "/internal/features/user/repo/repository.go WriteUniqueKey"
+
+	conn, err := r.GetConn()
+	if err != nil {
+		return "", fmt.Errorf("%s:%w", op, err)
+	}
+
+	defer conn.Release()
+
+	var createdKey string
+
+	if err := conn.QueryRow(ctx, WriteUniqueRefKey, userID, refCode).Scan(&createdKey); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+
+			return "", sharederrors.ErrNotUnique
+		}
+
+		return "", fmt.Errorf("%s:%w", op, err)
+	}
+
+	return createdKey, nil
 }

@@ -21,6 +21,12 @@ func ValidateChangePassword(req dto.ChangeUserPasswordRequest) error {
 	)
 }
 
+func ValidateReferralKey(req dto.CreateReferralKeyRequest) error {
+	return validation.ValidateStruct(&req,
+		validation.Field(&req.ReferralKey, validation.Required, validation.Length(1, 120)),
+	)
+}
+
 func validatePassword(value interface{}) error {
 	s, ok := value.(string)
 	if !ok || s == "" {

@@ -16,6 +16,14 @@ type (
 		Message          string
 	}
 
+	CreateReferralKeyRequest struct {
+		ReferralKey string
+	}
+
+	CreateReferralKeyResponse struct {
+		Message string
+	}
+
 	DeleteAccountRequest struct {
 		Password string
 	}

@@ -19,6 +19,7 @@ type UserService interface {
 	CompareAndChangePassword(ctx context.Context, userID string, oldPassword string, newPassword string) (err error)
 	ChangeUsersCurrentReferrer(ctx context.Context, userID string, referralString string) (newTryWillBeAfter time.Duration, err error)
 	DeleteAccount(ctx context.Context, userID string, password string) error
+	CreateReferralKey(ctx context.Context, userID string, referralkey string) (string, error)
 }
 type UserHandler struct {
 	uService UserService
@@ -31,7 +32,6 @@ func NewUserHandler(us UserService) *UserHandler {
 func Register(r chi.Router, us UserService) {
 	h := NewUserHandler(us)
 
-	r.Put("/user/changerefferer", h.ChangeReferrer)
 	r.Delete("/user/deleteaccount", h.DeleteUsersAccount)
 }
 
@@ -76,10 +76,9 @@ func (uh *UserHandler) ChangeUserPassword(w http.ResponseWriter, r *http.Request
 func (uh *UserHandler) ChangeReferrer(w http.ResponseWriter, r *http.Request) {
 	const op = "/internal/features/user/http.ChangeReferrer"
 
-	userID, ok := r.Context().Value("user_id").(string)
+	userID, ok := r.Context().Value(jwtcontext.UserIDKey).(string)
 	if !ok {
-		responseReturn(w, http.StatusUnauthorized, dto.ChangeReferrerResponse{ReferralCooldown: "", Message: "status: unauthorized"})
-
+		responseReturn(w, http.StatusUnauthorized, dto.ChangeReferrerResponse{ReferralCooldown: "", Message: "unauthorized"})
 		return
 	}
 
@@ -135,6 +134,40 @@ func (uh *UserHandler) ChangeReferrer(w http.ResponseWriter, r *http.Request) {
 
 	responseReturn(w, http.StatusOK, resp)
 
+}
+
+func (uh *UserHandler) CreateUniqueReferralKey(w http.ResponseWriter, r *http.Request) {
+	const op = "internal/features/user/http/handler.go CreateUniqueReferralKey"
+
+	userID, ok := r.Context().Value(jwtcontext.UserIDKey).(string)
+	if !ok {
+		responseReturn(w, http.StatusUnauthorized, dto.CreateReferralKeyResponse{Message: "unauthorized"})
+		return
+	}
+
+	var req dto.CreateReferralKeyRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		responseReturn(w, http.StatusBadRequest, dto.CreateReferralKeyResponse{Message: "error invalid body"})
+		return
+	}
+
+	if err := ValidateReferralKey(req); err != nil {
+		responseReturn(w, http.StatusBadRequest, dto.CreateReferralKeyResponse{Message: "validation was failed due to length of this key"})
+		return
+	}
+
+	key, err := uh.uService.CreateReferralKey(r.Context(), userID, req.ReferralKey)
+	if err != nil {
+		if errors.Is(err, sharederrors.ErrNotUnique) {
+			responseReturn(w, http.StatusConflict, dto.CreateReferralKeyResponse{Message: "this referral key already owned by someone, or this account already have one"})
+			return
+		}
+		responseReturn(w, http.StatusInternalServerError, dto.CreateReferralKeyResponse{Message: "internal server error"})
+		return
+	}
+
+	responseReturn(w, http.StatusOK, dto.CreateReferralKeyResponse{Message: key})
 }
 
 func (uh *UserHandler) DeleteUsersAccount(w http.ResponseWriter, r *http.Request) {

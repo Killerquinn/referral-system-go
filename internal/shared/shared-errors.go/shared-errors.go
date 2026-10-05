@@ -16,6 +16,6 @@ var (
 	ErrUserIsBanned                      = errors.New("Error user is banned. Any interactions with this user unavaible now")
 	ErrUserDoesntHaveReferralsYet        = errors.New("User doesnt have referrals yet")
 	ErrInvalidCursorFormat               = errors.New("Error client gave invalid cursor format: unnable to show next pages of referrals")
-
-	ErrInsufficientQuantityOfReferrals = errors.New("User have insufficient quantity of referrals to start contest with this much of winners")
+	ErrInsufficientQuantityOfReferrals   = errors.New("User have insufficient quantity of referrals to start contest with this much of winners")
+	ErrNotUnique                         = errors.New("Error this referral key already exists")
 )

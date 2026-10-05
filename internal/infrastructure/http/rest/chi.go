@@ -49,9 +49,15 @@ func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *u
 
 	r.Group(func(r chi.Router) {
 		r.Use(localmdw.AuthMiddleware(cfg.JWT.Secret))
-
+		//auth
 		r.Delete("/auth/logout", newAuthHandler.UserLogOut)
+		//user
 		r.Put("/user/changepassword", newUserHandler.ChangeUserPassword)
+		r.Put("/user/changerefferer", newUserHandler.ChangeReferrer)
+		r.Post("/user/createkey", newUserHandler.CreateUniqueReferralKey)
+		//referral
+
+		//reward
 	})
 
 	log.Info("setup server")
