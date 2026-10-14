@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/killerquinn/referral-system-go/internal/features/user/dto"
 	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
@@ -17,6 +18,7 @@ type Uservice struct {
 	credChange     credentialsChange
 	refOpts        referralOptions
 	accountOptions accountOptions
+	searchOptions  searchOptions
 }
 
 type credentialsChange interface {
@@ -34,18 +36,23 @@ type referralOptions interface {
 type accountOptions interface {
 	CheckAndDeleteUsersAccount(ctx context.Context, userID string) error
 }
+type searchOptions interface {
+	User(ctx context.Context, username string, callerUserID string) (dto.UserItems, error)
+}
 
 func New(
 	log *zap.Logger,
 	changeCreds credentialsChange,
 	referralOptions referralOptions,
 	accountOptions accountOptions,
+	searchOptions searchOptions,
 ) *Uservice {
 	return &Uservice{
 		log:            log,
 		credChange:     changeCreds,
 		refOpts:        referralOptions,
 		accountOptions: accountOptions,
+		searchOptions:  searchOptions,
 	}
 }
 
@@ -210,6 +217,33 @@ func (u *Uservice) DeleteAccount(ctx context.Context, userID string, password st
 	}
 
 	return nil
+}
+
+func (u *Uservice) FindUserByUsername(ctx context.Context, callerUserID string, username string) (dto.UserByUsernameResponse, error) {
+	const op = "/internal/features/user/service/user.go FindUserByUsername"
+
+	log := u.log.With(
+		zap.String("caller id", callerUserID),
+		zap.String("op", op),
+	)
+
+	log.Info("preparing to get user")
+
+	userItems, err := u.searchOptions.User(ctx, username, callerUserID)
+	if err != nil {
+		if errors.Is(err, sharederrors.ErrUserNotFound) {
+			return dto.UserByUsernameResponse{}, sharederrors.ErrUserNotFound
+		}
+		log.Error("err", zap.Error(err))
+
+		return dto.UserByUsernameResponse{}, fmt.Errorf("%s:%w", op, err)
+	}
+
+	if userItems.IsBlocked {
+		return dto.UserByUsernameResponse{}, sharederrors.ErrUserIsBanned
+	}
+
+	return dto.UserByUsernameResponse{User: userItems, Message: "user successfully found"}, nil
 }
 
 func isOlderThenOneMonth(timestamp *time.Time) (bool, time.Duration) {

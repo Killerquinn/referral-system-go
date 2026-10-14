@@ -1,5 +1,7 @@
 package dto
 
+import "time"
+
 type (
 	ChangeUserPasswordRequest struct {
 		OldPass string
@@ -29,5 +31,19 @@ type (
 	}
 	DeleteAccountResponse struct {
 		Message string
+	}
+
+	UserItems struct {
+		Username        string     `json:"username"`
+		OwnReferral     *string    `json:"own_referral_key,omitempty"`
+		ReferredBy      *string    `json:"referred_by_username,omitempty"`
+		LastTimeRefUsed *time.Time `json:"last_time_ref_used,omitempty"`
+		IsBlocked       bool       `json:"is_blocked"`
+		CreatedAt       time.Time  `json:"created_at"`
+	}
+
+	UserByUsernameResponse struct {
+		User    UserItems `json:"user_items"`
+		Message string    `json:"message"`
 	}
 )

@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/killerquinn/referral-system-go/internal/features/user/dto"
 	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
 )
 
@@ -252,4 +253,33 @@ func (r *Repository) WriteUniqueKey(ctx context.Context, userID string, refCode 
 	}
 
 	return createdKey, nil
+}
+
+func (r *Repository) User(ctx context.Context, username string, callerUserID string) (dto.UserItems, error) {
+	const op = "/internal/features/user/repo/repository.go User"
+
+	conn, err := r.GetConn()
+	if err != nil {
+		return dto.UserItems{}, fmt.Errorf("%s:%w", op, err)
+	}
+
+	defer conn.Release()
+
+	var items dto.UserItems
+
+	if err := conn.QueryRow(ctx, SelectUser, callerUserID, username).Scan(
+		&items.Username,
+		&items.ReferredBy,
+		&items.OwnReferral,
+		&items.LastTimeRefUsed,
+		&items.IsBlocked,
+		&items.CreatedAt,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return dto.UserItems{}, sharederrors.ErrUserNotFound
+		}
+		return dto.UserItems{}, fmt.Errorf("%s:%w", op, err)
+	}
+
+	return items, err
 }

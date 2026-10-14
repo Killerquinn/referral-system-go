@@ -58,8 +58,8 @@ const (
 	SELECT
 		is_blocked
 	FROM
-		user_sessions
-	WHERE id = $1
+		users
+	WHERE username = $1
 	`
 
 	GetQuantityOfReferrers = `

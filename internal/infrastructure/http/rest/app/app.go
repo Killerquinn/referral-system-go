@@ -48,6 +48,7 @@ func New(logger *zap.Logger, port int, tokenTTL time.Duration, cfg *config.Confi
 		userqueries,
 		userqueries,
 		userqueries,
+		userqueries,
 	)
 
 	//add referral feature there
@@ -58,7 +59,7 @@ func New(logger *zap.Logger, port int, tokenTTL time.Duration, cfg *config.Confi
 
 	referralService := referralservice.New(
 		logger,
-		cfg.Opts.BaseUrl,
+		cfg.Options.BaseUrl,
 		referralrepo,
 	)
 

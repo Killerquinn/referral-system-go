@@ -45,7 +45,7 @@ func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *u
 
 	newAuthHandler := httphandler.NewAuthHandler(auth)
 	newUserHandler := userhttphandler.NewUserHandler(user)
-	_ = referralhttphandler.NewRefferalHandler(referral)
+	newReferralHandler := referralhttphandler.NewRefferalHandler(referral)
 
 	r.Group(func(r chi.Router) {
 		r.Use(localmdw.AuthMiddleware(cfg.JWT.Secret))
@@ -55,8 +55,9 @@ func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *u
 		r.Put("/user/changepassword", newUserHandler.ChangeUserPassword)
 		r.Put("/user/changerefferer", newUserHandler.ChangeReferrer)
 		r.Post("/user/createkey", newUserHandler.CreateUniqueReferralKey)
+		r.Get("/user/{identifier}", newUserHandler.UserByUsername)
 		//referral
-
+		r.Get("/api/v1/referrals/{identifier}", newReferralHandler.CurrentReferralList)
 		//reward
 	})
 

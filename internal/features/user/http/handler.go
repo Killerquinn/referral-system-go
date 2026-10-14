@@ -20,6 +20,7 @@ type UserService interface {
 	ChangeUsersCurrentReferrer(ctx context.Context, userID string, referralString string) (newTryWillBeAfter time.Duration, err error)
 	DeleteAccount(ctx context.Context, userID string, password string) error
 	CreateReferralKey(ctx context.Context, userID string, referralkey string) (string, error)
+	FindUserByUsername(ctx context.Context, callerUserID string, username string) (dto.UserByUsernameResponse, error)
 }
 type UserHandler struct {
 	uService UserService
@@ -197,6 +198,42 @@ func (uh *UserHandler) DeleteUsersAccount(w http.ResponseWriter, r *http.Request
 	}
 
 	responseReturn(w, http.StatusOK, dto.DeleteAccountResponse{Message: "account successfully deleted"})
+}
+
+func (uh *UserHandler) UserByUsername(w http.ResponseWriter, r *http.Request) {
+	const op = "internal/features/user/http/handler.go UserByUsername"
+
+	userID, ok := r.Context().Value(jwtcontext.UserIDKey).(string)
+	if !ok {
+		responseReturn(w, http.StatusUnauthorized, dto.UserByUsernameResponse{Message: "first of all - login/register to see account of others"})
+		return
+	}
+
+	param := chi.URLParam(r, "identifier")
+	if len(param) < 3 || len(param) > 20 {
+		if len(param) == 0 {
+			responseReturn(w, http.StatusBadRequest, dto.UserByUsernameResponse{Message: "username field cannot be empty"})
+			return
+		}
+		responseReturn(w, http.StatusBadRequest, dto.UserByUsernameResponse{Message: "status bad request, username cannot be that short/long"})
+		return
+	}
+
+	resp, err := uh.uService.FindUserByUsername(r.Context(), userID, param)
+	if err != nil {
+		if errors.Is(err, sharederrors.ErrUserNotFound) {
+			responseReturn(w, http.StatusNotFound, dto.UserByUsernameResponse{Message: "user with that username doesnt exist"})
+			return
+		}
+		if errors.Is(err, sharederrors.ErrUserIsBanned) {
+			responseReturn(w, http.StatusForbidden, dto.UserByUsernameResponse{Message: "user with that username has been banned"})
+			return
+		}
+		responseReturn(w, http.StatusInternalServerError, dto.UserByUsernameResponse{Message: "internal server error"})
+		return
+	}
+
+	responseReturn(w, http.StatusOK, resp)
 }
 
 func responseReturn(w http.ResponseWriter, status int, resp any, headers ...httpfeatures.Header) {

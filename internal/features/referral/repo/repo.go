@@ -109,7 +109,7 @@ func (r *Repository) GetReferralsByRefferersUsername(ctx context.Context, userna
 		return nil, fmt.Errorf("%s:%w", op, err)
 	}
 
-	resp, err := pgx.CollectRows(rows, pgx.RowToStructByName[dto.ReferralItem])
+	resp, err := pgx.CollectRows(rows, pgx.RowToStructByNameLax[dto.ReferralItem])
 	if err != nil {
 		return nil, fmt.Errorf("%s:%w", op, err)
 	}
@@ -141,7 +141,7 @@ func (r *Repository) GetReferralsByOwnUserID(ctx context.Context, ownUserID stri
 		return nil, fmt.Errorf("%s:%w", op, err)
 	}
 
-	resp, err := pgx.CollectRows(rows, pgx.RowToStructByName[dto.ReferralItem])
+	resp, err := pgx.CollectRows(rows, pgx.RowToStructByNameLax[dto.ReferralItem])
 	if err != nil {
 		return nil, fmt.Errorf("%s:%w", op, err)
 	}

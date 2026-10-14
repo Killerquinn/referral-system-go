@@ -40,7 +40,7 @@ type (
 	}
 
 	ReferralItem struct {
-		ID         string    `json:"id"`
+		ID         string    `json:"-"`
 		Username   string    `json:"username"`
 		ProfileURL string    `json:"profile_url"`
 		JoinedAt   time.Time `json:"joined_at"`

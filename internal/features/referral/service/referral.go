@@ -135,7 +135,6 @@ func (rfs *RefService) CheckCurrentReferralList(ctx context.Context, referrerID 
 	items := make([]dto.ReferralItem, 0, len(entities))
 	for _, e := range entities {
 		items = append(items, dto.ReferralItem{
-			ID:         e.ID,
 			Username:   e.Username,
 			ProfileURL: httpfeatures.BuildUrl(rfs.baseurl, e.Username),
 			JoinedAt:   e.JoinedAt,

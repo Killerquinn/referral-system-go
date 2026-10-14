@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/killerquinn/referral-system-go/internal/features/referral/dto"
 	httpfeatures "github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/http-features"
+	"github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/jwtcontext"
 	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
 )
 
@@ -32,7 +33,6 @@ func NewRefferalHandler(rs ReferralService) *ReferralHandler {
 func Register(r chi.Router, rs ReferralService) {
 	rh := NewRefferalHandler(rs)
 
-	r.Get("/api/v1/referrals/{identifier}", rh.CurrentReferralList)
 	r.Post("/api/v1/referrals/draw", rh.ContestBetweenReferrals)
 	r.Get("/api/v1/{identifier}/refferer", rh.SeeWhoseReferralAlready)
 }
@@ -49,7 +49,7 @@ func (rh *ReferralHandler) CurrentReferralList(w http.ResponseWriter, r *http.Re
 
 	var targetID string
 
-	userID, ok := r.Context().Value("user_id").(string) //use it in case if identifier is empty
+	userID, ok := r.Context().Value(jwtcontext.UserIDKey).(string) //use it in case if identifier is empty
 	if !ok {
 		responseReturn(w, http.StatusUnauthorized, dto.CurrentReferralListResponse{Items: nil, NextCursor: nil, HasMore: false, Message: "cannot check referrals: unauthorized"})
 		return

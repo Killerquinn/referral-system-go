@@ -22,8 +22,8 @@ type Config struct {
 	Stripe   StripeConfig
 	Jaeger   JaegerConfig
 	//Prometheus PrometheusConfig
-	JWT  JWTokenConfig
-	Opts Options
+	JWT     JWTokenConfig
+	Options Options
 }
 
 type ServerConfig struct {

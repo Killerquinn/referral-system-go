@@ -68,4 +68,19 @@ const (
   	AND NOT EXISTS (SELECT 1 FROM users WHERE own_referral_key = $2)
 	RETURNING own_referral_key
 	`
+	SelectUser = `
+	SELECT	
+		u.username,
+		ref.username AS referrer_username,
+		u.own_referral_key,
+		CASE
+			WHEN u.referred_by_id = $1 THEN u.last_time_ref_used
+			ELSE NULL
+		END AS last_time_ref_used,
+		u.is_blocked,
+		u.created_at
+	FROM users u
+	LEFT JOIN users ref ON u.referred_by_id = ref.id
+	WHERE u.username = $2
+`
 )
