@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/killerquinn/referral-system-go/internal/features/auth/dto"
+	httpfeatures "github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/http-features"
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/jwtcontext"
 	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
 )
@@ -45,22 +46,30 @@ func (h *HandlerRest) RegisterNewUser(w http.ResponseWriter, r *http.Request) {
 	var req dto.RegisterNewUserRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("%s:%s", op, "invalid body"), http.StatusBadRequest)
+		responseReturn(w, http.StatusBadRequest, "bad request")
 		return
 	}
 
 	if err := ValidateNewUser(&req); err != nil {
-		http.Error(w, fmt.Sprintf("%v", err), http.StatusBadRequest)
+		responseReturn(w, http.StatusBadRequest, fmt.Sprintf("%s:%s", op, err.Error()))
 		return
 	}
 
 	userID, err := h.service.RegisterUser(r.Context(), req.Username, req.Email, req.Password)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("%s:%s", op, "internal status error"), http.StatusInternalServerError)
+		if errors.Is(err, sharederrors.ErrNotUniqueUsername) {
+			responseReturn(w, http.StatusForbidden, sharederrors.ErrNotUniqueUsername.Error())
+			return
+		}
+		if errors.Is(err, sharederrors.ErrUserAlreadyRegistered) {
+			responseReturn(w, http.StatusForbidden, sharederrors.ErrUserAlreadyRegistered.Error())
+			return
+		}
+		responseReturn(w, http.StatusInternalServerError, "status internal error")
+		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"user_id": userID})
+	responseReturn(w, http.StatusOK, userID)
 }
 
 func (h *HandlerRest) UserLogIn(w http.ResponseWriter, r *http.Request) {
@@ -69,12 +78,12 @@ func (h *HandlerRest) UserLogIn(w http.ResponseWriter, r *http.Request) {
 	var req dto.LoginUserRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("%s:%s", op, "invalid body"), http.StatusBadRequest)
+		responseReturn(w, http.StatusBadRequest, "bad request")
 		return
 	}
 
 	if err := ValidateLogin(&req); err != nil {
-		http.Error(w, fmt.Sprintf("%v", err), http.StatusBadRequest)
+		responseReturn(w, http.StatusBadRequest, fmt.Sprintf("%s:%s", op, err.Error()))
 		return
 	}
 
@@ -85,14 +94,14 @@ func (h *HandlerRest) UserLogIn(w http.ResponseWriter, r *http.Request) {
 	atoken, rtoken, err := h.service.Login(r.Context(), req.Email, req.Password, userAgent, ip)
 	if err != nil {
 		if errors.Is(err, sharederrors.ErrInvalidCreds) {
-			http.Error(w, "invalid credentials", http.StatusUnauthorized)
+			responseReturn(w, http.StatusForbidden, "invalid creds")
 			return
 		}
 		if errors.Is(err, sharederrors.ErrUserNotFound) {
-			http.Error(w, "invalid credentials", http.StatusNotFound)
+			responseReturn(w, http.StatusNotFound, "user doesnt exist")
 			return
 		}
-		http.Error(w, fmt.Sprintf("%s:%s", op, "internal status error"), http.StatusInternalServerError)
+		responseReturn(w, http.StatusInternalServerError, "status internal error")
 		return
 	}
 
@@ -101,8 +110,7 @@ func (h *HandlerRest) UserLogIn(w http.ResponseWriter, r *http.Request) {
 		Refresh: rtoken,
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	responseReturn(w, http.StatusOK, resp)
 }
 
 func (h *HandlerRest) UserLogOut(w http.ResponseWriter, r *http.Request) {
@@ -110,17 +118,16 @@ func (h *HandlerRest) UserLogOut(w http.ResponseWriter, r *http.Request) {
 
 	userID, ok := r.Context().Value(jwtcontext.UserIDKey).(string)
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		responseReturn(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
 	if err := h.service.Logout(r.Context(), userID); err != nil {
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		responseReturn(w, http.StatusInternalServerError, "status internal error")
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(http.StatusOK)
+	responseReturn(w, http.StatusOK, "successfull log out")
 
 }
 
@@ -137,4 +144,15 @@ func getClientIP(r *http.Request) string {
 		return r.RemoteAddr
 	}
 	return host
+}
+
+func responseReturn(w http.ResponseWriter, status int, resp any, headers ...httpfeatures.Header) {
+	w.Header().Set("Content-Type", "application/json")
+
+	for _, h := range headers {
+		w.Header().Set(h.Key, h.Value)
+	}
+
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(resp)
 }

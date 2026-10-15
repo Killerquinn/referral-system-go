@@ -31,10 +31,8 @@ func NewRefferalHandler(rs ReferralService) *ReferralHandler {
 }
 
 func Register(r chi.Router, rs ReferralService) {
-	rh := NewRefferalHandler(rs)
+	_ = NewRefferalHandler(rs)
 
-	r.Post("/api/v1/referrals/draw", rh.ContestBetweenReferrals)
-	r.Get("/api/v1/{identifier}/refferer", rh.SeeWhoseReferralAlready)
 }
 
 const (
@@ -107,7 +105,7 @@ func (rh *ReferralHandler) CurrentReferralList(w http.ResponseWriter, r *http.Re
 func (rh *ReferralHandler) ContestBetweenReferrals(w http.ResponseWriter, r *http.Request) {
 	const op = "referral-system-go/internal/features/referral/http/handler.go - ContestBetweenReferrals"
 
-	sponsorID, ok := r.Context().Value("user_id").(string)
+	sponsorID, ok := r.Context().Value(jwtcontext.UserIDKey).(string)
 	if !ok {
 		responseReturn(w, http.StatusUnauthorized, dto.ContestBetweenReferralsResponse{Winners: nil, Message: "unauthorized"})
 		return
@@ -149,7 +147,7 @@ func (rh *ReferralHandler) ContestBetweenReferrals(w http.ResponseWriter, r *htt
 func (rh *ReferralHandler) SeeWhoseReferralAlready(w http.ResponseWriter, r *http.Request) {
 	const op = "referral-system-go/internal/features/referral/http/handler.go - SeeWhoseReferralAlready"
 
-	_, ok := r.Context().Value("user_id").(string)
+	_, ok := r.Context().Value(jwtcontext.UserIDKey).(string)
 	if !ok {
 		responseReturn(w, http.StatusUnauthorized, dto.SeeWhoseReferralAlreadyResponse{Referrer: "", ReferrerURL: "", ReferralSince: time.Time{}, Message: "status: unauthorized"})
 		return

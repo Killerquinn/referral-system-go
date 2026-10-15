@@ -37,7 +37,7 @@ type accountOptions interface {
 	CheckAndDeleteUsersAccount(ctx context.Context, userID string) error
 }
 type searchOptions interface {
-	User(ctx context.Context, username string, callerUserID string) (dto.UserItems, error)
+	User(ctx context.Context, callerUserID string, username string) (dto.UserItems, error)
 }
 
 func New(
@@ -170,9 +170,9 @@ func (u *Uservice) CreateReferralKey(ctx context.Context, userID string, referra
 
 	createdKey, err := u.refOpts.WriteUniqueKey(ctx, userID, referralkey)
 	if err != nil {
-		if errors.Is(err, sharederrors.ErrNotUnique) {
+		if errors.Is(err, sharederrors.ErrNotUniqueKey) {
 
-			return "", sharederrors.ErrNotUnique
+			return "", sharederrors.ErrNotUniqueKey
 		}
 
 		log.Error(fmt.Sprintf("%s", op), zap.Error(err))
@@ -229,7 +229,7 @@ func (u *Uservice) FindUserByUsername(ctx context.Context, callerUserID string, 
 
 	log.Info("preparing to get user")
 
-	userItems, err := u.searchOptions.User(ctx, username, callerUserID)
+	userItems, err := u.searchOptions.User(ctx, callerUserID, username)
 	if err != nil {
 		if errors.Is(err, sharederrors.ErrUserNotFound) {
 			return dto.UserByUsernameResponse{}, sharederrors.ErrUserNotFound

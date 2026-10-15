@@ -78,12 +78,12 @@ func (r *Repository) User(ctx context.Context, email string) (auth.User, error) 
 	return user, nil
 }
 
-func (r *Repository) UserExists(ctx context.Context, email string) (bool, error) { //To-Do: make repository shared to avoid connection collisions and else(I'm building monolith, not microservices)
+func (r *Repository) UserExists(ctx context.Context, email string) error { //To-Do: make repository shared to avoid connection collisions and else(I'm building monolith, not microservices)
 	const op = "user/repo.UserExist"
 
 	conn, err := r.GetConn()
 	if err != nil {
-		return true, fmt.Errorf("%s:%w", op, err)
+		return fmt.Errorf("%s:%w", op, err)
 	}
 	defer conn.Release()
 
@@ -91,14 +91,14 @@ func (r *Repository) UserExists(ctx context.Context, email string) (bool, error)
 
 	err = conn.QueryRow(ctx, selectIfUserExist, email).Scan(&isUserExist)
 	if err != nil {
-		return true, fmt.Errorf("%s:%w", op, err)
+		return fmt.Errorf("%s:%w", op, err)
 	}
 
 	if isUserExist {
-		return true, fmt.Errorf("user with that email already exist")
+		return sharederrors.ErrUserAlreadyRegistered
 	}
 
-	return false, nil
+	return nil
 }
 
 func (r *Repository) SaveNewUser(ctx context.Context, username string, email string, password []byte) (uid string, err error) {
@@ -116,6 +116,9 @@ func (r *Repository) SaveNewUser(ctx context.Context, username string, email str
 	if err != nil {
 		if pgerr, ok := err.(*pgconn.PgError); ok && pgerr.Code == "23505" {
 			return "", sharederrors.ErrUserAlreadyRegistered
+		}
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", sharederrors.ErrNotUniqueUsername
 		}
 		return "", fmt.Errorf("%s:%w", op, err)
 	}

@@ -31,9 +31,8 @@ func NewUserHandler(us UserService) *UserHandler {
 }
 
 func Register(r chi.Router, us UserService) {
-	h := NewUserHandler(us)
+	_ = NewUserHandler(us)
 
-	r.Delete("/user/deleteaccount", h.DeleteUsersAccount)
 }
 
 var (
@@ -160,7 +159,7 @@ func (uh *UserHandler) CreateUniqueReferralKey(w http.ResponseWriter, r *http.Re
 
 	key, err := uh.uService.CreateReferralKey(r.Context(), userID, req.ReferralKey)
 	if err != nil {
-		if errors.Is(err, sharederrors.ErrNotUnique) {
+		if errors.Is(err, sharederrors.ErrNotUniqueKey) {
 			responseReturn(w, http.StatusConflict, dto.CreateReferralKeyResponse{Message: "this referral key already owned by someone, or this account already have one"})
 			return
 		}
@@ -174,7 +173,7 @@ func (uh *UserHandler) CreateUniqueReferralKey(w http.ResponseWriter, r *http.Re
 func (uh *UserHandler) DeleteUsersAccount(w http.ResponseWriter, r *http.Request) {
 	const op = "internal/features/user/http/handler.go DeleteUsersAccount"
 
-	userID, ok := r.Context().Value("user_id").(string)
+	userID, ok := r.Context().Value(jwtcontext.UserIDKey).(string)
 	if !ok {
 		responseReturn(w, http.StatusUnauthorized, dto.DeleteAccountResponse{Message: "status: unauthorized"})
 		return

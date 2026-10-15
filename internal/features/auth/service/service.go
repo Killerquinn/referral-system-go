@@ -25,8 +25,7 @@ type Auth struct {
 }
 
 type userAuth interface {
-	UserExists(ctx context.Context, email string) (bool, error)
-	//CredsMatch(ctx context.Context, email string, password []byte) (matched bool, err error) //To-Do: resolve that
+	UserExists(ctx context.Context, email string) error
 }
 
 type sessionRegister interface {
@@ -65,14 +64,11 @@ func (auth *Auth) RegisterUser(ctx context.Context, username string, email strin
 	)
 	log.Info("start process of register new user")
 
-	exist, err := auth.userAuth.UserExists(ctx, email)
-	if err != nil {
-		log.Error("error", zap.Error(err))
+	if err := auth.userAuth.UserExists(ctx, email); err != nil {
+		if errors.Is(err, sharederrors.ErrUserAlreadyRegistered) {
+			return "", sharederrors.ErrUserAlreadyRegistered
+		}
 		return "", fmt.Errorf("%s:%w", op, err)
-	}
-	if exist {
-		log.Error("error", zap.Error(err))
-		return "", sharederrors.ErrUserAlreadyRegistered
 	}
 
 	hashedPass, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -83,6 +79,9 @@ func (auth *Auth) RegisterUser(ctx context.Context, username string, email strin
 
 	id, err := auth.newUser.SaveNewUser(ctx, username, email, hashedPass)
 	if err != nil {
+		if errors.Is(err, sharederrors.ErrNotUniqueUsername) {
+			return "", sharederrors.ErrNotUniqueUsername
+		}
 		log.Error("error", zap.Error(err))
 		return "", fmt.Errorf("%s:%w", op, err)
 	}
@@ -98,7 +97,7 @@ func (auth *Auth) Login(ctx context.Context, email string, password string, user
 	)
 	log.Info("start proccess of logging ig new user")
 
-	_, err = auth.userAuth.UserExists(ctx, email)
+	err = auth.userAuth.UserExists(ctx, email)
 	if err == nil {
 
 		return "", "", sharederrors.ErrUserNotFound

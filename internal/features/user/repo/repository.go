@@ -246,7 +246,7 @@ func (r *Repository) WriteUniqueKey(ctx context.Context, userID string, refCode 
 	if err := conn.QueryRow(ctx, WriteUniqueRefKey, userID, refCode).Scan(&createdKey); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 
-			return "", sharederrors.ErrNotUnique
+			return "", sharederrors.ErrNotUniqueKey
 		}
 
 		return "", fmt.Errorf("%s:%w", op, err)
@@ -255,7 +255,7 @@ func (r *Repository) WriteUniqueKey(ctx context.Context, userID string, refCode 
 	return createdKey, nil
 }
 
-func (r *Repository) User(ctx context.Context, username string, callerUserID string) (dto.UserItems, error) {
+func (r *Repository) User(ctx context.Context, callerUserID string, username string) (dto.UserItems, error) {
 	const op = "/internal/features/user/repo/repository.go User"
 
 	conn, err := r.GetConn()
