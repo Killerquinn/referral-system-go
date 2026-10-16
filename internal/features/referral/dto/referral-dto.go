@@ -23,10 +23,11 @@ type (
 	}
 
 	WinnersDTO struct {
+		ID            string    `json:"-"`
 		Place         int       `json:"place"`
 		Username      string    `json:"winner_username" db:"username"`
 		UserURL       string    `json:"winner_user_url" `
-		ReferralSince time.Time `json:"winner_referral_since" db:"referral_timestamp"`
+		ReferralSince time.Time `json:"winner_referral_since" db:"joined_at"`
 	}
 	CurrentReferralListRequest struct {
 		Identifier string `json:"indentifier"`
