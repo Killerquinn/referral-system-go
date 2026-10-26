@@ -45,7 +45,7 @@ func main() {
 
 	//start server
 
-	application := app.New(log, cfg.Server.Port, time.Minute*15, cfg)
+	application := app.New(log, cfg.Server.Port, cfg.JWT.TTL, cfg.Refresh.TTL, cfg)
 	go func() {
 		if err := application.RestServer.Run(log); err != nil {
 			log.Fatal("server didn't start for some reason... : ", zap.Error(err))

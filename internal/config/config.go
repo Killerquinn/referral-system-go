@@ -23,6 +23,7 @@ type Config struct {
 	Jaeger   JaegerConfig
 	//Prometheus PrometheusConfig
 	JWT     JWTokenConfig
+	Refresh RefreshConfig
 	Options Options
 }
 
@@ -60,6 +61,11 @@ type JWTokenConfig struct {
 	TTL    time.Duration `koanf:"ttl"`
 }
 
+type RefreshConfig struct {
+	HMACSecret string        `koanf:"hmac_secret"`
+	TTL        time.Duration `koanf:"refresh_ttl"`
+}
+
 type Options struct {
 	BaseUrl string `koanf:"baseurl"`
 }
@@ -84,6 +90,8 @@ func LoadConfig() *Config {
 			return "stripe.webhook_secret"
 		case "APP_JWT_SECRET_KEY":
 			return "jwt.secret_key"
+		case "APP_HMAC_SECRET_KEY":
+			return "refresh.hmac_secret"
 		default:
 			return strings.ToLower(s)
 		}

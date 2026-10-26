@@ -19,6 +19,7 @@ type AuthService interface {
 	RegisterUser(ctx context.Context, username string, email string, password string) (userid string, err error)
 	Login(ctx context.Context, email string, password string, userAgent string, userIP string) (actoken string, rtoken string, err error)
 	Logout(ctx context.Context, userID string) error
+	Refresh(ctx context.Context, rtokenHash string, metadata dto.SessionMetadata) (tokens *dto.Tokens, err error)
 }
 
 type HandlerRest struct {
@@ -34,6 +35,7 @@ func Register(r chi.Router, as AuthService) {
 
 	r.Post("/auth/register", h.RegisterNewUser)
 	r.Post("/auth/login", h.UserLogIn)
+	r.Post("/auth/refresh", h.Refresh)
 }
 
 var (
@@ -129,6 +131,34 @@ func (h *HandlerRest) UserLogOut(w http.ResponseWriter, r *http.Request) {
 
 	responseReturn(w, http.StatusOK, "successfull log out")
 
+}
+
+func (h *HandlerRest) Refresh(w http.ResponseWriter, r *http.Request) {
+
+	var req dto.RefreshRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Refresh == "" {
+		responseReturn(w, http.StatusBadRequest, "bad request")
+		return
+	}
+
+	meta := dto.SessionMetadata{
+		UserAgent: r.UserAgent(),
+		ClientIP:  getClientIP(r),
+	}
+
+	tokens, err := h.service.Refresh(r.Context(), req.Refresh, meta)
+	if errors.Is(err, sharederrors.ErrInvalidRefresh) {
+		responseReturn(w, http.StatusUnauthorized, sharederrors.ErrInvalidRefresh)
+		return
+	}
+	if err != nil {
+		responseReturn(w, http.StatusInternalServerError, dto.Tokens{})
+		return
+	}
+
+	resp := tokens
+
+	responseReturn(w, http.StatusOK, resp)
 }
 
 func getClientIP(r *http.Request) string {

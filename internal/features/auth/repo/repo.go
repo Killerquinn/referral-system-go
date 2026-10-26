@@ -2,6 +2,7 @@ package repopackage
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log"
@@ -12,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/killerquinn/referral-system-go/internal/domain/auth"
+	"github.com/killerquinn/referral-system-go/internal/features/auth/dto"
 	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
 )
 
@@ -167,4 +169,24 @@ func (r *Repository) DeleteCurrentSession(ctx context.Context, userUUID uuid.UUI
 		return sharederrors.ErrSessionNotFound
 	}
 	return nil
+}
+
+func (r *Repository) RotateSession(ctx context.Context, givenRefresh string, newRefresh string, ttl time.Time, metadata dto.SessionMetadata) (userID string, err error) {
+	const op = "user/repo.RotateSession"
+
+	conn, err := r.GetConn()
+	if err != nil {
+		return "", fmt.Errorf("%s:%w", op, err)
+	}
+	defer conn.Release()
+
+	if err := conn.QueryRow(ctx, rotateSession, givenRefresh, newRefresh, ttl, metadata.UserAgent, metadata.UserAgent).Scan(&userID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", sharederrors.ErrInvalidRefresh
+		}
+
+		return "", fmt.Errorf("%s:%w", op, err)
+	}
+
+	return userID, err
 }

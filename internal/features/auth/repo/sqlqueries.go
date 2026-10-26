@@ -48,4 +48,10 @@ const (
     expires_at
 	) VALUES ($1, $2, $3, $4, $5) RETURNING refresh_token_hash
 	`
+	rotateSession = `
+	UPDATE user_sessions
+	SET refresh_token_hash = $2, expires_at = $3, user_agent = $4, client_ip = $5
+	WHERE refresh_token_hash = $1 AND expires_at > now()
+	RETURNING user_id
+	`
 )

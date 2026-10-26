@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
 	"github.com/killerquinn/referral-system-go/internal/config"
 	authhttphandler "github.com/killerquinn/referral-system-go/internal/features/auth/http-handler"
 	httphandler "github.com/killerquinn/referral-system-go/internal/features/auth/http-handler"
@@ -42,6 +43,14 @@ func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *u
 	r.Use(middleware.Recoverer)
 
 	r.Use(middleware.RealIP)
+
+	r.Use(cors.Handler(cors.Options{
+		AllowedOrigins:   []string{"http://localhost:5173"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+		AllowCredentials: true,
+		MaxAge:           300,
+	}))
 
 	newAuthHandler := httphandler.NewAuthHandler(auth)
 	newUserHandler := userhttphandler.NewUserHandler(user)

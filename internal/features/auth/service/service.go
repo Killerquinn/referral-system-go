@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/killerquinn/referral-system-go/internal/domain/auth"
+	"github.com/killerquinn/referral-system-go/internal/features/auth/dto"
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/jwt"
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/refreshtoken"
 	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
@@ -16,12 +17,14 @@ import (
 )
 
 type Auth struct {
-	log       *zap.Logger
-	jwtsecret []byte
-	tokenTTL  time.Duration
-	userAuth  userAuth
-	sRegister sessionRegister
-	newUser   newUser
+	log        *zap.Logger
+	jwtsecret  []byte
+	hmacsecret []byte
+	tokenTTL   time.Duration
+	refreshTTL time.Duration
+	userAuth   userAuth
+	sRegister  sessionRegister
+	newUser    newUser
 }
 
 type userAuth interface {
@@ -31,6 +34,7 @@ type userAuth interface {
 type sessionRegister interface {
 	CreateSession(ctx context.Context, userID uuid.UUID, hashedRefreshToken string, userAgent string, clientIP string, expiresAt time.Time) (refreshToken []byte, err error)
 	DeleteCurrentSession(ctx context.Context, userID uuid.UUID) error
+	RotateSession(ctx context.Context, givenRefresh string, usersRefresh string, ttl time.Time, metadata dto.SessionMetadata) (userID string, err error)
 }
 
 type newUser interface {
@@ -41,7 +45,9 @@ type newUser interface {
 func New(
 	log *zap.Logger,
 	jwtsecret []byte,
+	hmacsecret []byte,
 	tokenTTL time.Duration,
+	refreshTTL time.Duration,
 	userAuth userAuth,
 	sRegister sessionRegister,
 	nUser newUser) *Auth {
@@ -123,7 +129,7 @@ func (auth *Auth) Login(ctx context.Context, email string, password string, user
 		return "", "", sharederrors.ErrInvalidCreds
 	}
 
-	refreshToken, err := refreshtoken.GenerateRefreshToken()
+	rawrefreshToken, rhash, err := refreshtoken.GenerateRefreshToken(auth.jwtsecret)
 	if err != nil {
 		log.Error("139 - error", zap.Error(err))
 		return "", "", fmt.Errorf("%s:%w", op, err)
@@ -135,19 +141,13 @@ func (auth *Auth) Login(ctx context.Context, email string, password string, user
 		return "", "", fmt.Errorf("%s:%w", op, err)
 	}
 
-	rToken, err := auth.sRegister.CreateSession(ctx, user.ID, refreshToken, userAgent, userIP, time.Now().Add(auth.tokenTTL))
+	_, err = auth.sRegister.CreateSession(ctx, user.ID, rhash, userAgent, userIP, time.Now().Add(auth.refreshTTL))
 	if err != nil {
 		log.Error("151 - error", zap.Error(err))
 		return "", "", fmt.Errorf("%s:%w", op, err)
 	}
 
-	preparedRToken, err := refreshtoken.UnhashToken(rToken)
-	if err != nil {
-		log.Error("157 - error", zap.Error(err))
-		return "", "", fmt.Errorf("%s:%w", op, err)
-	}
-
-	return accessToken, preparedRToken, nil
+	return accessToken, rawrefreshToken, nil
 }
 
 func (auth *Auth) Logout(ctx context.Context, userID string) error {
@@ -171,4 +171,36 @@ func (auth *Auth) Logout(ctx context.Context, userID string) error {
 
 	log.Info("users session successfully deleted")
 	return nil
+}
+
+func (auth *Auth) Refresh(ctx context.Context, rawtoken string, metadata dto.SessionMetadata) (tokens *dto.Tokens, err error) {
+	const op = "auth/service.Refresh"
+
+	log := auth.log.With(
+		zap.String(op, "op"),
+	)
+
+	newRaw, newHash, err := refreshtoken.GenerateRefreshToken(auth.hmacsecret)
+	if err != nil {
+		log.Error("err", zap.Error(err))
+		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+
+	userID, err := auth.sRegister.RotateSession(ctx, refreshtoken.HashToken(rawtoken, auth.hmacsecret), newHash,
+		time.Now().Add(auth.refreshTTL), metadata)
+	if err != nil {
+		if errors.Is(err, sharederrors.ErrInvalidRefresh) {
+			return nil, sharederrors.ErrInvalidRefresh
+		}
+		log.Error("err", zap.Error(err))
+		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+
+	access, err := jwt.GenerateAccessToken(userID, string(auth.jwtsecret)) // same func that login use
+	if err != nil {
+		log.Error("err", zap.Error(err))
+		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+
+	return &dto.Tokens{Access: access, Refresh: newRaw}, nil
 }

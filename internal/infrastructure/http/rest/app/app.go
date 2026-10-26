@@ -18,7 +18,7 @@ type App struct {
 	RestServer *rest.App
 }
 
-func New(logger *zap.Logger, port int, tokenTTL time.Duration, cfg *config.Config) *App {
+func New(logger *zap.Logger, port int, tokenTTL time.Duration, refreshTTL time.Duration, cfg *config.Config) *App {
 	const op = "New"
 
 	//AUTH INTERFACES
@@ -28,10 +28,13 @@ func New(logger *zap.Logger, port int, tokenTTL time.Duration, cfg *config.Confi
 	authstorage := authrepopackage.New(cfg.Postgres.DSN)
 
 	secret := cfg.JWT.Secret
+	hmacsecret := cfg.Refresh.HMACSecret
 
 	authService := authservice.New(logger,
 		[]byte(secret),
+		[]byte(hmacsecret),
 		tokenTTL,
+		refreshTTL,
 		authstorage, // userAuth interface
 		authstorage, // newUser interface
 		authstorage, // session interface

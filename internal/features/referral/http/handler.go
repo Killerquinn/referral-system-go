@@ -176,6 +176,7 @@ func (rh *ReferralHandler) SeeWhoseReferralAlready(w http.ResponseWriter, r *htt
 	}
 
 	response := dto.SeeWhoseReferralAlreadyResponse{
+		Message:       "User successfully found",
 		Referrer:      referrersUsername,
 		ReferralSince: referrerSince,
 		ReferrerURL:   referrerProfileUrl,

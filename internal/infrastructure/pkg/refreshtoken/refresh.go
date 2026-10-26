@@ -1,24 +1,27 @@
 package refreshtoken
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
-	"encoding/base64"
+	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 )
 
-func GenerateRefreshToken() (string, error) {
+func GenerateRefreshToken(secret []byte) (string, string, error) {
 	b := make([]byte, 32)
 	_, err := rand.Read(b)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	return hex.EncodeToString(b), nil
+
+	raw := hex.EncodeToString(b)
+	hash := HashToken(raw, secret)
+
+	return raw, hash, nil
 }
 
-func UnhashToken(b []byte) (string, error) {
-	if b == nil {
-		return "", fmt.Errorf("%w:%s", fmt.Errorf("refresh token is missing"), "retry your request please")
-	}
-	return base64.URLEncoding.EncodeToString(b), nil
+func HashToken(raw string, secret []byte) string {
+	mac := hmac.New(sha256.New, secret)
+	mac.Write([]byte(raw))
+	return hex.EncodeToString(mac.Sum(nil))
 }

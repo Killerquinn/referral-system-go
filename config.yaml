@@ -24,8 +24,12 @@ jaeger:
   sampler: 1.0
 
 jwt:
-  ttl: "24h"
-  secret_key: "supersecret"
+  ttl: 15m
+  secret_key: "supersecret xD"
+
+refresh:
+  hmac_secret: "supersecret xD"
+  refresh_ttl: 720h #30 days
 
 options:
   baseurl: "http://myapp.com"

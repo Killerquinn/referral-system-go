@@ -14,11 +14,15 @@ type (
 		UserID string
 	}
 	Tokens struct {
-		Access  string
-		Refresh string
+		Access  string `json:"access"`
+		Refresh string `json:"refresh"`
 	}
 	SessionMetadata struct {
 		UserAgent string
 		ClientIP  string
+	}
+
+	RefreshRequest struct {
+		Refresh string
 	}
 )

@@ -19,4 +19,5 @@ var (
 	ErrInsufficientQuantityOfReferrals   = errors.New("User have insufficient quantity of referrals to start contest with this much of winners")
 	ErrNotUniqueKey                      = errors.New("chosen referral key already claimed")
 	ErrNotUniqueUsername                 = errors.New("chosen username already claimed")
+	ErrInvalidRefresh                    = errors.New("unauthorized, login")
 )
