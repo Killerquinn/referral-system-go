@@ -114,8 +114,6 @@ func LoadConfig() *Config {
 		cfg.Server.Name = "local_project"
 	}
 
-	//fmt.Printf("cfg.JWT.Secret is - %s", cfg.JWT.Secret)
-
 	return &cfg
 }
 

@@ -38,6 +38,7 @@ type accountOptions interface {
 }
 type searchOptions interface {
 	User(ctx context.Context, callerUserID string, username string) (dto.UserItems, error)
+	Self(ctx context.Context, userID string) (dto.SelfUserItems, error)
 }
 
 func New(
@@ -244,6 +245,26 @@ func (u *Uservice) FindUserByUsername(ctx context.Context, callerUserID string, 
 	}
 
 	return dto.UserByUsernameResponse{User: userItems, Message: "user successfully found"}, nil
+}
+
+func (u *Uservice) GetSelf(ctx context.Context, userID string) (*dto.SelfUser, error) {
+	const op = "/internal/features/user/service/user.go GetSelf"
+
+	log := u.log.With(
+		zap.String("userid", userID),
+		zap.String("op", op),
+	)
+
+	log.Info("user left nothing in identifier, so prepare to him info about himself")
+
+	userItems, err := u.searchOptions.Self(ctx, userID)
+	if err != nil {
+		log.Error("error", zap.Error(err))
+
+		return &dto.SelfUser{Message: "error occured"}, fmt.Errorf("%s:%w", op, err)
+	}
+
+	return &dto.SelfUser{User: userItems, Message: "user successfully found"}, err
 }
 
 func isOlderThenOneMonth(timestamp *time.Time) (bool, time.Duration) {

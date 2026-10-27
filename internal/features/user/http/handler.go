@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -21,6 +22,7 @@ type UserService interface {
 	DeleteAccount(ctx context.Context, userID string, password string) error
 	CreateReferralKey(ctx context.Context, userID string, referralkey string) (string, error)
 	FindUserByUsername(ctx context.Context, callerUserID string, username string) (dto.UserByUsernameResponse, error)
+	GetSelf(ctx context.Context, userID string) (*dto.SelfUser, error)
 }
 type UserHandler struct {
 	uService UserService
@@ -209,9 +211,16 @@ func (uh *UserHandler) UserByUsername(w http.ResponseWriter, r *http.Request) {
 	}
 
 	param := chi.URLParam(r, "identifier")
-	if len(param) < 3 || len(param) > 20 {
-		if len(param) == 0 {
-			responseReturn(w, http.StatusBadRequest, dto.UserByUsernameResponse{Message: "username field cannot be empty"})
+
+	prepparam := strings.TrimSpace(param)
+	if len(prepparam) < 3 || len(prepparam) > 20 {
+		if len(prepparam) == 0 {
+			resp, err := uh.uService.GetSelf(r.Context(), userID)
+			if err != nil {
+				responseReturn(w, http.StatusInternalServerError, resp)
+				return
+			}
+			responseReturn(w, http.StatusOK, resp)
 			return
 		}
 		responseReturn(w, http.StatusBadRequest, dto.UserByUsernameResponse{Message: "status bad request, username cannot be that short/long"})

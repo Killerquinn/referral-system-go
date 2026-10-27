@@ -134,9 +134,11 @@ func (h *HandlerRest) UserLogOut(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HandlerRest) Refresh(w http.ResponseWriter, r *http.Request) {
-
+	const op = "auth/http-handler Refresh"
 	var req dto.RefreshRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Refresh == "" {
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		fmt.Printf("%s:%s", op, err.Error())
 		responseReturn(w, http.StatusBadRequest, "bad request")
 		return
 	}

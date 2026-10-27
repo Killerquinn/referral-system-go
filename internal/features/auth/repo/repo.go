@@ -180,7 +180,7 @@ func (r *Repository) RotateSession(ctx context.Context, givenRefresh string, new
 	}
 	defer conn.Release()
 
-	if err := conn.QueryRow(ctx, rotateSession, givenRefresh, newRefresh, ttl, metadata.UserAgent, metadata.UserAgent).Scan(&userID); err != nil {
+	if err := conn.QueryRow(ctx, rotateSession, givenRefresh, newRefresh, ttl, metadata.UserAgent, metadata.ClientIP).Scan(&userID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", sharederrors.ErrInvalidRefresh
 		}

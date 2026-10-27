@@ -283,3 +283,29 @@ func (r *Repository) User(ctx context.Context, callerUserID string, username str
 
 	return items, err
 }
+
+func (r *Repository) Self(ctx context.Context, userID string) (item dto.SelfUserItems, err error) {
+	const op = "/internal/features/user/repo/repository.go User"
+
+	conn, err := r.GetConn()
+	if err != nil {
+		return dto.SelfUserItems{}, fmt.Errorf("%s:%w", op, err)
+	}
+
+	defer conn.Release()
+
+	if err := conn.QueryRow(ctx, SelectSelf, userID).Scan(
+		&item.Username,
+		&item.ConnectedEmail,
+		&item.OwnReferral,
+		&item.ReferredBy,
+		&item.LastTimeRefUsed,
+		&item.IsBlocked,
+		&item.CreatedAt,
+		&item.LastLogin,
+	); err != nil {
+		return dto.SelfUserItems{}, fmt.Errorf("%s:%w", op, err)
+	}
+
+	return item, err
+}

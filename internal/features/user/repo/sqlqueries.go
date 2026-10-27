@@ -83,4 +83,19 @@ const (
 	LEFT JOIN users ref ON u.referred_by_id = ref.id
 	WHERE u.username = $2
 `
+
+	SelectSelf = `
+	SELECT
+   	 u.username,
+   	 u.email,
+   	 u.own_referral_key,
+     ref.username AS referrer_username,
+     u.last_time_ref_used,
+     u.is_blocked,
+     u.created_at,
+    (SELECT MAX(us.created_at) FROM user_sessions us WHERE us.user_id = u.id) AS last_login
+	FROM users u
+	LEFT JOIN users ref ON ref.id = u.referred_by_id
+	WHERE u.id = $1
+	`
 )

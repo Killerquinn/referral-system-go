@@ -46,4 +46,19 @@ type (
 		User    UserItems `json:"user_items"`
 		Message string    `json:"message"`
 	}
+
+	SelfUserItems struct {
+		Username        string     `json:"username"`
+		ConnectedEmail  string     `json:"connected_email"`
+		OwnReferral     *string    `json:"own_referral_key,omitempty"`
+		ReferredBy      *string    `json:"referred_by_username,omitempty"`
+		LastTimeRefUsed *time.Time `json:"last_time_ref_used,omitempty"`
+		IsBlocked       bool       `json:"is_blocked"`
+		CreatedAt       time.Time  `json:"created_at"`
+		LastLogin       time.Time  `json:"last_login,omitempty"`
+	}
+	SelfUser struct {
+		User    SelfUserItems `json:"user"`
+		Message string        `json:"message"`
+	}
 )

@@ -64,12 +64,19 @@ func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *u
 		r.Put("/user/changepassword", newUserHandler.ChangeUserPassword)
 		r.Put("/user/changerefferer", newUserHandler.ChangeReferrer)
 		r.Post("/user/createkey", newUserHandler.CreateUniqueReferralKey)
+
+		//===================================================================
+		//getuser
 		r.Get("/user/{identifier}", newUserHandler.UserByUsername)
+		//getself
+		r.Get("/user", newUserHandler.UserByUsername)
+		//===================================================================
+
 		r.Post("/user/deleteaccount", newUserHandler.DeleteUsersAccount)
 		//referral
 		r.Get("/api/v1/referrals/{identifier}", newReferralHandler.CurrentReferralList)
 		r.Post("/api/v1/referrals/draw", newReferralHandler.ContestBetweenReferrals)
-		r.Get("/api/v1/{identifier}/refferer", newReferralHandler.SeeWhoseReferralAlready)
+		r.Get("/api/v1/referralinfo/{identifier}", newReferralHandler.SeeWhoseReferralAlready)
 		//reward
 	})
 
