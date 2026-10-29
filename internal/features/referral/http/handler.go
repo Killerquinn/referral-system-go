@@ -50,7 +50,7 @@ func (rh *ReferralHandler) CurrentReferralList(w http.ResponseWriter, r *http.Re
 
 	userID, ok := r.Context().Value(jwtcontext.UserIDKey).(string) //use it in case if identifier is empty
 	if !ok {
-		responseReturn(w, http.StatusUnauthorized, dto.CurrentReferralListResponse{Items: nil, NextCursor: nil, HasMore: false, Message: "cannot check referrals: unauthorized"})
+		responseReturn(w, http.StatusUnauthorized, dto.CurrentReferralListResponse{Items: []dto.ReferralItem{}, NextCursor: nil, HasMore: false, Message: "cannot check referrals: unauthorized"})
 		return
 	}
 
@@ -84,21 +84,33 @@ func (rh *ReferralHandler) CurrentReferralList(w http.ResponseWriter, r *http.Re
 		Limit:      parsedLimit,
 	}
 	params := dto.ReferralListParams{
-		Limit:  req.Limit,
+		Limit:  5,
 		Cursor: req.Cursor,
 	}
 
 	resp, err := rh.rService.CheckCurrentReferralList(r.Context(), req.Identifier, params)
 	if err != nil {
 		if errors.Is(err, sharederrors.ErrUserNotFound) {
-			responseReturn(w, http.StatusNotFound, dto.CurrentReferralListResponse{Items: nil, NextCursor: nil, HasMore: false, Message: "user with this username doesnt exist"})
+			responseReturn(w, http.StatusNotFound, dto.CurrentReferralListResponse{Items: []dto.ReferralItem{}, NextCursor: nil, HasMore: false, Message: "user with this username doesnt exist"})
 			return
 		}
 		if errors.Is(err, sharederrors.ErrUserIsBanned) {
-			responseReturn(w, http.StatusForbidden, dto.CurrentReferralListResponse{Items: nil, NextCursor: nil, HasMore: false, Message: "Error user is banned. Any interactions with this user unavaible now"})
+			responseReturn(w, http.StatusForbidden, dto.CurrentReferralListResponse{Items: []dto.ReferralItem{}, NextCursor: nil, HasMore: false, Message: "Error user is banned. Any interactions with this user unavaible now"})
 			return
 		}
-		responseReturn(w, http.StatusInternalServerError, dto.CurrentReferralListResponse{Items: nil, NextCursor: nil, HasMore: false, Message: "internal server error"})
+		if errors.Is(err, sharederrors.ErrUserDoesntHaveReferralsYet) {
+			responseReturn(w, http.StatusOK, dto.CurrentReferralListResponse{Items: []dto.ReferralItem{}, NextCursor: nil, HasMore: false, Message: "User doesnt have referrals yet..."})
+			return
+		}
+		if errors.Is(err, sharederrors.ErrInvalidCursorFormat) {
+			responseReturn(w, http.StatusBadRequest, dto.CurrentReferralListResponse{Items: []dto.ReferralItem{}, NextCursor: nil, HasMore: false, Message: "Invalid cursor format"})
+			return
+		}
+		if errors.Is(err, sharederrors.ErrInvalidCursorTime) {
+			responseReturn(w, http.StatusBadRequest, dto.CurrentReferralListResponse{Items: []dto.ReferralItem{}, NextCursor: nil, HasMore: false, Message: "Invalid cursor time"})
+			return
+		}
+		responseReturn(w, http.StatusInternalServerError, dto.CurrentReferralListResponse{Items: []dto.ReferralItem{}, NextCursor: nil, HasMore: false, Message: "internal server error"})
 		return
 	}
 

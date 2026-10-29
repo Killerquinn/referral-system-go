@@ -19,11 +19,11 @@ type (
 	}
 
 	CreateReferralKeyRequest struct {
-		ReferralKey string
+		ReferralKey string `json:"referral_key"`
 	}
 
 	CreateReferralKeyResponse struct {
-		Message string
+		Message string `json:"message"`
 	}
 
 	DeleteAccountRequest struct {

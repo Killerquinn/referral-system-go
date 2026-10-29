@@ -20,4 +20,6 @@ var (
 	ErrNotUniqueKey                      = errors.New("chosen referral key already claimed")
 	ErrNotUniqueUsername                 = errors.New("chosen username already claimed")
 	ErrInvalidRefresh                    = errors.New("unauthorized, login")
+	ErrInvalidCursorTime                 = errors.New("invalid cursor's time format")
+	ErrAccountAlreadyHaveTheKey          = errors.New("User already claimed his key, unnable to create new one")
 )

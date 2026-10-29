@@ -162,7 +162,11 @@ func (uh *UserHandler) CreateUniqueReferralKey(w http.ResponseWriter, r *http.Re
 	key, err := uh.uService.CreateReferralKey(r.Context(), userID, req.ReferralKey)
 	if err != nil {
 		if errors.Is(err, sharederrors.ErrNotUniqueKey) {
-			responseReturn(w, http.StatusConflict, dto.CreateReferralKeyResponse{Message: "this referral key already owned by someone, or this account already have one"})
+			responseReturn(w, http.StatusConflict, dto.CreateReferralKeyResponse{Message: "Key is not unique or you already claimed a key"})
+			return
+		}
+		if errors.Is(err, sharederrors.ErrAccountAlreadyHaveTheKey) {
+			responseReturn(w, http.StatusForbidden, dto.CreateReferralKeyResponse{Message: "user already claimed his key"})
 			return
 		}
 		responseReturn(w, http.StatusInternalServerError, dto.CreateReferralKeyResponse{Message: "internal server error"})

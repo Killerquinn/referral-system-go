@@ -1,10 +1,12 @@
 package httpfeatures
 
 import (
-	"errors"
+	"encoding/base64"
 	"fmt"
 	"strings"
 	"time"
+
+	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
 )
 
 func BuildUrl(baseUrl string, username string) string {
@@ -22,14 +24,16 @@ func TimePtrToStringPtr(t *time.Time) *string {
 }
 
 func ParseCursor(cursor string) (parsedTime time.Time, parsedID string, err error) {
-	slice := strings.SplitN(cursor, "_", 2)
+	decodedCursor, err := base64.RawURLEncoding.DecodeString(cursor)
+
+	slice := strings.SplitN(string(decodedCursor), "|", 2)
 	if len(slice) != 2 {
-		return time.Time{}, "", errors.New("invalid cursor format")
+		return time.Time{}, "", sharederrors.ErrInvalidCursorFormat
 	}
 
-	preparedTime, err := time.Parse(time.RFC3339, slice[0])
+	preparedTime, err := time.Parse(time.RFC3339Nano, slice[0])
 	if err != nil {
-		return time.Time{}, "", fmt.Errorf("invalid time in cursor: %w", err)
+		return time.Time{}, "", sharederrors.ErrInvalidCursorTime
 	}
 
 	return preparedTime, slice[1], nil

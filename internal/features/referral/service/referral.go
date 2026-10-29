@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"time"
@@ -71,7 +72,7 @@ func (rfs *RefService) CheckCurrentReferralList(ctx context.Context, referrerID 
 	)
 
 	if params.Limit <= 0 {
-		params.Limit = 0
+		params.Limit = 20
 	}
 	if params.Limit > 100 {
 		params.Limit = 100
@@ -91,7 +92,13 @@ func (rfs *RefService) CheckCurrentReferralList(ctx context.Context, referrerID 
 	} else {
 		parsedTime, parsedID, err := httpfeatures.ParseCursor(params.Cursor)
 		if err != nil {
-			return nil, sharederrors.ErrInvalidCursorFormat
+			if errors.Is(err, sharederrors.ErrInvalidCursorFormat) {
+				return nil, err
+			}
+			if errors.Is(err, sharederrors.ErrInvalidCursorFormat) {
+				return nil, err
+			}
+			return nil, fmt.Errorf("%s:%w", op, err)
 		}
 		cursorTime = &parsedTime
 		cursorID = &parsedID
@@ -100,7 +107,7 @@ func (rfs *RefService) CheckCurrentReferralList(ctx context.Context, referrerID 
 	switch _, parseErr := uuid.Parse(referrerID); parseErr {
 	case nil:
 		log.Info("user tries to check his own referrals")
-		entities, err = rfs.refCheck.GetReferralsByOwnUserID(ctx, referrerID, cursorTime, cursorID, params.Limit)
+		entities, err = rfs.refCheck.GetReferralsByOwnUserID(ctx, referrerID, cursorTime, cursorID, params.Limit+1)
 	default:
 		log.Info("user tries to check other referrals by username referrals")
 		entities, err = rfs.refCheck.GetReferralsByRefferersUsername(ctx, referrerID, cursorTime, cursorID, params.Limit)
@@ -121,16 +128,15 @@ func (rfs *RefService) CheckCurrentReferralList(ctx context.Context, referrerID 
 		}
 	}
 	hasMore := false
-	var nextCursor string
+	var nextCursor *string
 
 	if len(entities) > params.Limit {
 		hasMore = true
-
 		entities = entities[:params.Limit]
-
-		lastTimeItem := entities[len(entities)]
-
-		nextCursor = fmt.Sprintf("%s_%s", lastTimeItem.JoinedAt.Format(time.RFC3339), lastTimeItem.ID)
+		last := entities[len(entities)-1]
+		raw := fmt.Sprintf("%s|%s", last.JoinedAt.Format(time.RFC3339Nano), last.ID)
+		enc := base64.URLEncoding.EncodeToString([]byte(raw))
+		nextCursor = &enc
 	}
 	items := make([]dto.ReferralItem, 0, len(entities))
 	for _, e := range entities {
@@ -143,7 +149,7 @@ func (rfs *RefService) CheckCurrentReferralList(ctx context.Context, referrerID 
 
 	return &dto.CurrentReferralListResponse{
 		Items:      items,
-		NextCursor: &nextCursor,
+		NextCursor: nextCursor,
 		HasMore:    hasMore,
 	}, nil
 
