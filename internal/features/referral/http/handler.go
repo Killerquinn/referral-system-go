@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -59,19 +60,21 @@ func (rh *ReferralHandler) CurrentReferralList(w http.ResponseWriter, r *http.Re
 
 	parsedLimit := parseLimit(limitStr)
 
-	if identifier == "" {
+	preparedIdentifier := strings.TrimSpace(identifier)
+
+	if preparedIdentifier == "" {
 		targetID = userID
 	} else {
-		_, err := uuid.Parse(identifier)
+		_, err := uuid.Parse(preparedIdentifier)
 		if err == nil {
 			targetID = userID //not allowing user to find someone by userID
 		} else {
-			if len(identifier) < 3 || len(identifier) > 32 {
+			if len(preparedIdentifier) < 3 || len(preparedIdentifier) > 32 {
 
 				http.Error(w, "invalid username length", http.StatusBadRequest)
 				return
 			}
-			targetID = identifier
+			targetID = preparedIdentifier
 		}
 	}
 

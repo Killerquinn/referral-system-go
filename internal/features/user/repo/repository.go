@@ -298,6 +298,7 @@ func (r *Repository) Self(ctx context.Context, userID string) (item dto.SelfUser
 		&item.Username,
 		&item.ConnectedEmail,
 		&item.OwnReferral,
+		&item.ReferralCount,
 		&item.ReferredBy,
 		&item.LastTimeRefUsed,
 		&item.IsBlocked,

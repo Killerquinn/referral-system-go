@@ -51,6 +51,7 @@ type (
 		Username        string     `json:"username"`
 		ConnectedEmail  string     `json:"connected_email"`
 		OwnReferral     *string    `json:"own_referral_key,omitempty"`
+		ReferralCount   int        `json:"referral_count"`
 		ReferredBy      *string    `json:"referred_by_username,omitempty"`
 		LastTimeRefUsed *time.Time `json:"last_time_ref_used,omitempty"`
 		IsBlocked       bool       `json:"is_blocked"`

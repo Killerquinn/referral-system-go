@@ -89,6 +89,7 @@ const (
    	 u.username,
    	 u.email,
    	 u.own_referral_key,
+	(SELECT COUNT(*) FROM users r WHERE r.referred_by_id = u.id) AS referrals_count,
      ref.username AS referrer_username,
      u.last_time_ref_used,
      u.is_blocked,

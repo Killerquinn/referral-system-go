@@ -75,6 +75,7 @@ func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *u
 		r.Post("/user/deleteaccount", newUserHandler.DeleteUsersAccount)
 		//referral
 		r.Get("/api/v1/referrals/{identifier}", newReferralHandler.CurrentReferralList)
+		r.Get("/api/v1/referrals", newReferralHandler.CurrentReferralList)
 		r.Post("/api/v1/referrals/draw", newReferralHandler.ContestBetweenReferrals)
 		r.Get("/api/v1/referralinfo/{identifier}", newReferralHandler.SeeWhoseReferralAlready)
 		//reward
