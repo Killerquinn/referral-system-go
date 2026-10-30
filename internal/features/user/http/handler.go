@@ -115,12 +115,12 @@ func (uh *UserHandler) ChangeReferrer(w http.ResponseWriter, r *http.Request) {
 				Message:          "Referrer wasnt changed, referrer or referral code doesnt exist",
 			}
 
-			responseReturn(w, http.StatusBadRequest, resp)
+			responseReturn(w, http.StatusNotFound, resp)
 
 			return
 		}
 
-		http.Error(w, "status internal server error", http.StatusInternalServerError)
+		responseReturn(w, http.StatusInternalServerError, dto.ChangeReferrerResponse{})
 
 		return
 	}

@@ -11,11 +11,11 @@ type (
 		Message string
 	}
 	ChangeReferrerRequest struct {
-		ReferralCode string
+		ReferralCode string `json:"referral_code"`
 	}
 	ChangeReferrerResponse struct {
-		ReferralCooldown string
-		Message          string
+		ReferralCooldown string `json:"referral_cooldown"`
+		Message          string `json:"message"`
 	}
 
 	CreateReferralKeyRequest struct {
@@ -27,10 +27,10 @@ type (
 	}
 
 	DeleteAccountRequest struct {
-		Password string
+		Password string `json:"password"`
 	}
 	DeleteAccountResponse struct {
-		Message string
+		Message string `json:"message"`
 	}
 
 	UserItems struct {

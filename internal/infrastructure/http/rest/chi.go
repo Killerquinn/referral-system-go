@@ -62,7 +62,7 @@ func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *u
 		r.Delete("/auth/logout", newAuthHandler.UserLogOut)
 		//user
 		r.Put("/user/changepassword", newUserHandler.ChangeUserPassword)
-		r.Put("/user/changerefferer", newUserHandler.ChangeReferrer)
+		r.Put("/user/changereferrer", newUserHandler.ChangeReferrer)
 		r.Post("/user/createkey", newUserHandler.CreateUniqueReferralKey)
 
 		//===================================================================
