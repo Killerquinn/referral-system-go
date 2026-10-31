@@ -33,7 +33,8 @@ type userAuth interface {
 
 type sessionRegister interface {
 	CreateSession(ctx context.Context, userID uuid.UUID, hashedRefreshToken string, userAgent string, clientIP string, expiresAt time.Time) (refreshToken []byte, err error)
-	DeleteCurrentSession(ctx context.Context, userID uuid.UUID) error
+	DeleteSession(ctx context.Context, refreshHash string) error
+	DeleteAllSessions(ctx context.Context, userID uuid.UUID) error
 	RotateSession(ctx context.Context, givenRefresh string, usersRefresh string, ttl time.Time, metadata dto.SessionMetadata) (userID string, err error)
 }
 
@@ -152,26 +153,39 @@ func (auth *Auth) Login(ctx context.Context, email string, password string, user
 	return accessToken, rawrefreshToken, nil
 }
 
-func (auth *Auth) Logout(ctx context.Context, userID string) error {
+func (auth *Auth) Logout(ctx context.Context, rawRefresh string) error {
 	const op = "auth/service.Logout"
 
 	log := auth.log.With(
 		zap.String(op, "trying to logout user"),
 	)
 
-	log.Info("preparing to delete a current user's session")
+	if err := auth.sRegister.DeleteSession(ctx, refreshtoken.HashToken(rawRefresh, auth.hmacsecret)); err != nil {
+		log.Error("unable to delete session", zap.Error(err))
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	return nil
+}
+
+func (auth *Auth) LogoutAll(ctx context.Context, userID string) error {
+	const op = "auth/service.LogoutAll"
+
+	log := auth.log.With(
+		zap.String(op, "trying to logout user from all devices"),
+	)
 
 	uuID, err := uuid.Parse(userID)
 	if err != nil {
 		return fmt.Errorf("%s:%w", op, err)
 	}
 
-	if err = auth.sRegister.DeleteCurrentSession(ctx, uuID); err != nil {
-		log.Error("somewhy unable to delete users session", zap.Error(err))
+	if err = auth.sRegister.DeleteAllSessions(ctx, uuID); err != nil {
+		log.Error("unable to delete user's sessions", zap.Error(err))
 		return fmt.Errorf("%s:%w", op, err)
 	}
 
-	log.Info("users session successfully deleted")
+	log.Info("all user's sessions successfully deleted")
 	return nil
 }
 

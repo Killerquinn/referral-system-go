@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/killerquinn/referral-system-go/internal/features/auth/dto"
+	localmdw "github.com/killerquinn/referral-system-go/internal/infrastructure/http/middleware"
 	httpfeatures "github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/http-features"
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/jwtcontext"
 	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
@@ -19,24 +21,31 @@ import (
 type AuthService interface {
 	RegisterUser(ctx context.Context, username string, email string, password string) (userid string, err error)
 	Login(ctx context.Context, email string, password string, userAgent string, userIP string) (actoken string, rtoken string, err error)
-	Logout(ctx context.Context, userID string) error
+	Logout(ctx context.Context, rawRefresh string) error
+	LogoutAll(ctx context.Context, userID string) error
 	Refresh(ctx context.Context, rtokenHash string, metadata dto.SessionMetadata) (tokens *dto.Tokens, err error)
 }
 
+type EmailLimiter interface {
+	Allow(key string) bool
+}
+
 type HandlerRest struct {
-	service AuthService
+	service      AuthService
+	emailLimiter EmailLimiter
 }
 
-func NewAuthHandler(as AuthService) *HandlerRest {
-	return &HandlerRest{service: as}
+func NewAuthHandler(as AuthService, el EmailLimiter) *HandlerRest {
+	return &HandlerRest{service: as, emailLimiter: el}
 }
 
-func Register(r chi.Router, as AuthService) {
-	h := NewAuthHandler(as)
+func Register(r chi.Router, as AuthService, ipLimiter *localmdw.RateLimiter, emailLimiter EmailLimiter) {
+	h := NewAuthHandler(as, emailLimiter)
 
 	r.Post("/auth/register", h.RegisterNewUser)
-	r.Post("/auth/login", h.UserLogIn)
+	r.With(ipLimiter.ByIP).Post("/auth/login", h.UserLogIn)
 	r.Post("/auth/refresh", h.Refresh)
+	r.Post("/auth/logout", h.UserLogOut)
 }
 
 var (
@@ -90,6 +99,11 @@ func (h *HandlerRest) UserLogIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !h.emailLimiter.Allow(strings.ToLower(req.Email)) {
+		responseReturn(w, http.StatusTooManyRequests, "too many requests")
+		return
+	}
+
 	userAgent := truncateUserAgent(r.UserAgent())
 
 	ip := getClientIP(r)
@@ -120,22 +134,41 @@ func (h *HandlerRest) UserLogIn(w http.ResponseWriter, r *http.Request) {
 	responseReturn(w, http.StatusOK, resp)
 }
 
+// UserLogOut ends only the session the given refresh token belongs to.
+// It doesn't require an access token, so logout still works after it expired.
 func (h *HandlerRest) UserLogOut(w http.ResponseWriter, r *http.Request) {
 	const op = "handler.Logout"
 
-	userID, ok := r.Context().Value(jwtcontext.UserIDKey).(string)
-	if !ok {
-		responseReturn(w, http.StatusUnauthorized, "unauthorized")
+	var req dto.RefreshRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Refresh == "" {
+		responseReturn(w, http.StatusBadRequest, "bad request")
 		return
 	}
 
-	if err := h.service.Logout(r.Context(), userID); err != nil {
+	if err := h.service.Logout(r.Context(), req.Refresh); err != nil {
 		responseReturn(w, http.StatusInternalServerError, "status internal error")
 		return
 	}
 
 	responseReturn(w, http.StatusOK, "successfull log out")
+}
 
+func (h *HandlerRest) UserLogOutAll(w http.ResponseWriter, r *http.Request) {
+	const op = "handler.LogoutAll"
+
+	userID, ok := jwtcontext.GetUserID(r.Context())
+	if !ok {
+		responseReturn(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	if err := h.service.LogoutAll(r.Context(), userID); err != nil {
+		responseReturn(w, http.StatusInternalServerError, "status internal error")
+		return
+	}
+
+	responseReturn(w, http.StatusOK, "successfull log out from all devices")
 }
 
 func (h *HandlerRest) Refresh(w http.ResponseWriter, r *http.Request) {

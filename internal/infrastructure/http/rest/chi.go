@@ -21,6 +21,7 @@ import (
 	userservice "github.com/killerquinn/referral-system-go/internal/features/user/service"
 	localmdw "github.com/killerquinn/referral-system-go/internal/infrastructure/http/middleware"
 	"go.uber.org/zap"
+	"golang.org/x/time/rate"
 )
 
 type App struct {
@@ -52,14 +53,18 @@ func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *u
 		MaxAge:           300,
 	}))
 
-	newAuthHandler := httphandler.NewAuthHandler(auth)
+	// separate limiters so IP and email keys never share one map
+	loginIPLimiter := localmdw.NewRateLimiter(rate.Every(12*time.Second), 5, 10*time.Minute)
+	loginEmailLimiter := localmdw.NewRateLimiter(rate.Every(12*time.Second), 5, 10*time.Minute)
+
+	newAuthHandler := httphandler.NewAuthHandler(auth, loginEmailLimiter)
 	newUserHandler := userhttphandler.NewUserHandler(user)
 	newReferralHandler := referralhttphandler.NewRefferalHandler(referral)
 
 	r.Group(func(r chi.Router) {
 		r.Use(localmdw.AuthMiddleware(cfg.JWT.Secret))
 		//auth
-		r.Delete("/auth/logout", newAuthHandler.UserLogOut)
+		r.Post("/auth/logout-all", newAuthHandler.UserLogOutAll)
 		//user
 		r.Put("/user/changepassword", newUserHandler.ChangeUserPassword)
 		r.Put("/user/changereferrer", newUserHandler.ChangeReferrer)
@@ -93,7 +98,7 @@ func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *u
 		WriteTimeout:      5 * time.Second,
 	}
 
-	authhttphandler.Register(r, auth)
+	authhttphandler.Register(r, auth, loginIPLimiter, loginEmailLimiter)
 	userhttphandler.Register(r, user)
 	referralhttphandler.Register(r, referral)
 

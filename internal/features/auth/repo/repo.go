@@ -98,17 +98,22 @@ func (r *Repository) CreateSession(ctx context.Context, userID uuid.UUID, hashed
 	return []byte(rToken), nil
 }
 
-func (r *Repository) DeleteCurrentSession(ctx context.Context, userUUID uuid.UUID) error {
-	const op = "user/repo.DeleteCurrentSession"
+// DeleteSession and DeleteAllSessions are idempotent: deleting an already
+// missing session is not an error, the client ends up logged out either way
+func (r *Repository) DeleteSession(ctx context.Context, refreshHash string) error {
+	const op = "user/repo.DeleteSession"
 
-	result, err := r.db.Exec(ctx, dropUsersSessionIfExist, userUUID)
-	if err != nil {
+	if _, err := r.db.Exec(ctx, dropSessionByRefreshHash, refreshHash); err != nil {
 		return fmt.Errorf("%s:%w", op, err)
 	}
+	return nil
+}
 
-	rowsAffected := result.RowsAffected()
-	if rowsAffected == 0 {
-		return sharederrors.ErrSessionNotFound
+func (r *Repository) DeleteAllSessions(ctx context.Context, userUUID uuid.UUID) error {
+	const op = "user/repo.DeleteAllSessions"
+
+	if _, err := r.db.Exec(ctx, dropAllUserSessions, userUUID); err != nil {
+		return fmt.Errorf("%s:%w", op, err)
 	}
 	return nil
 }

@@ -3,11 +3,17 @@ package middleware
 import (
 	"context"
 	"log"
+	"math"
+	"net"
 	"net/http"
+	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/jwtcontext"
+	"golang.org/x/time/rate"
 )
 
 func AuthMiddleware(secret string) func(http.Handler) http.Handler {
@@ -60,4 +66,78 @@ func AuthMiddleware(secret string) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+type client struct {
+	limiter  *rate.Limiter
+	lastSeen time.Time
+}
+
+type RateLimiter struct {
+	mu      sync.Mutex
+	clients map[string]*client
+
+	limit rate.Limit
+	burst int
+	ttl   time.Duration
+}
+
+func NewRateLimiter(limit rate.Limit, burst int, ttl time.Duration) *RateLimiter {
+	rl := &RateLimiter{
+		clients: make(map[string]*client),
+		limit:   limit,
+		burst:   burst,
+		ttl:     ttl,
+	}
+	go rl.cleanup()
+	return rl
+}
+
+func (rl *RateLimiter) Allow(key string) bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	c, ok := rl.clients[key]
+	if !ok {
+		c = &client{limiter: rate.NewLimiter(rl.limit, rl.burst)}
+		rl.clients[key] = c
+	}
+	c.lastSeen = time.Now()
+
+	return c.limiter.Allow()
+}
+
+func (rl *RateLimiter) cleanup() {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		rl.mu.Lock()
+		for key, c := range rl.clients {
+			if time.Since(c.lastSeen) > rl.ttl {
+				delete(rl.clients, key)
+			}
+		}
+		rl.mu.Unlock()
+	}
+}
+
+func (rl *RateLimiter) retryAfter() string {
+	seconds := math.Ceil(1 / float64(rl.limit))
+	return strconv.Itoa(int(seconds))
+}
+
+func (rl *RateLimiter) ByIP(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ip, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			ip = r.RemoteAddr
+		}
+		if !rl.Allow(ip) {
+			w.Header().Set("Retry-After", rl.retryAfter())
+			http.Error(w, "too many requests", http.StatusTooManyRequests)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

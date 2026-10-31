@@ -9,8 +9,12 @@ const (
 	SELECT is_blocked FROM user_sessions WHERE user_id = $1
 	`
 
-	dropUsersSessionIfExist = `
+	dropAllUserSessions = `
 	DELETE FROM user_sessions WHERE user_id = $1
+	`
+
+	dropSessionByRefreshHash = `
+	DELETE FROM user_sessions WHERE refresh_token_hash = $1
 	`
 
 	getUserByEmail = `
