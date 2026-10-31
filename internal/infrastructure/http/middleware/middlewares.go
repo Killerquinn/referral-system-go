@@ -19,10 +19,18 @@ func AuthMiddleware(secret string) func(http.Handler) http.Handler {
 				return
 			}
 
-			tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
+			tokenStr, found := strings.CutPrefix(authHeader, "Bearer ")
+			if !found {
+				http.Error(w, "ERR_1_NO_HEADER", http.StatusUnauthorized)
+				return
+			}
+
 			token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
 				return []byte(secret), nil
-			})
+			},
+				jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+				jwt.WithExpirationRequired(),
+			)
 
 			if err != nil {
 				log.Printf("--> [JWT PARSE ERROR]: %v", err)

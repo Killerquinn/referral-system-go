@@ -3,6 +3,7 @@ package app
 import (
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/killerquinn/referral-system-go/internal/config"
 	authrepopackage "github.com/killerquinn/referral-system-go/internal/features/auth/repo"
 	authservice "github.com/killerquinn/referral-system-go/internal/features/auth/service"
@@ -18,14 +19,14 @@ type App struct {
 	RestServer *rest.App
 }
 
-func New(logger *zap.Logger, port int, tokenTTL time.Duration, refreshTTL time.Duration, cfg *config.Config) *App {
+func New(logger *zap.Logger, pool *pgxpool.Pool, port int, tokenTTL time.Duration, refreshTTL time.Duration, cfg *config.Config) *App {
 	const op = "New"
 
 	//AUTH INTERFACES
 
 	logger.Info("start loading auth interfaces")
 
-	authstorage := authrepopackage.New(cfg.Postgres.DSN)
+	authstorage := authrepopackage.New(pool)
 
 	secret := cfg.JWT.Secret
 	hmacsecret := cfg.Refresh.HMACSecret
@@ -44,7 +45,7 @@ func New(logger *zap.Logger, port int, tokenTTL time.Duration, refreshTTL time.D
 
 	logger.Info("start loading user interfaces")
 
-	userqueries := userrepopackage.New(cfg.Postgres.DSN)
+	userqueries := userrepopackage.New(pool)
 
 	userService := userservice.New(
 		logger,
@@ -58,7 +59,7 @@ func New(logger *zap.Logger, port int, tokenTTL time.Duration, refreshTTL time.D
 
 	logger.Info("start loading referral interfaces")
 
-	referralrepo := referralrepopackage.New(cfg.Postgres.DSN)
+	referralrepo := referralrepopackage.New(pool)
 
 	referralService := referralservice.New(
 		logger,

@@ -6,11 +6,12 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-func GenerateAccessToken(userID string, secret string) (string, error) {
+func GenerateAccessToken(userID string, secret string, ttl time.Duration) (string, error) {
+	now := time.Now()
 	claims := jwt.MapClaims{
 		"sub": userID,
-		"exp": time.Now().Add(15 * time.Minute).Unix(),
-		"iat": time.Now().Unix(),
+		"exp": now.Add(ttl).Unix(),
+		"iat": now.Unix(),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

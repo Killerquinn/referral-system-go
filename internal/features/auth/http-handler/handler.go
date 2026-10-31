@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/killerquinn/referral-system-go/internal/features/auth/dto"
@@ -89,7 +90,7 @@ func (h *HandlerRest) UserLogIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userAgent := r.Header.Get("User-Agent")
+	userAgent := truncateUserAgent(r.UserAgent())
 
 	ip := getClientIP(r)
 
@@ -101,6 +102,10 @@ func (h *HandlerRest) UserLogIn(w http.ResponseWriter, r *http.Request) {
 		}
 		if errors.Is(err, sharederrors.ErrUserNotFound) {
 			responseReturn(w, http.StatusNotFound, "user doesnt exist")
+			return
+		}
+		if errors.Is(err, sharederrors.ErrUserIsBanned) {
+			responseReturn(w, http.StatusForbidden, sharederrors.ErrUserIsBanned.Error())
 			return
 		}
 		responseReturn(w, http.StatusInternalServerError, "status internal error")
@@ -144,17 +149,17 @@ func (h *HandlerRest) Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	meta := dto.SessionMetadata{
-		UserAgent: r.UserAgent(),
+		UserAgent: truncateUserAgent(r.UserAgent()),
 		ClientIP:  getClientIP(r),
 	}
 
 	tokens, err := h.service.Refresh(r.Context(), req.Refresh, meta)
 	if errors.Is(err, sharederrors.ErrInvalidRefresh) {
-		responseReturn(w, http.StatusUnauthorized, sharederrors.ErrInvalidRefresh)
+		responseReturn(w, http.StatusUnauthorized, sharederrors.ErrInvalidRefresh.Error())
 		return
 	}
 	if err != nil {
-		responseReturn(w, http.StatusInternalServerError, dto.Tokens{})
+		responseReturn(w, http.StatusInternalServerError, "status internal error")
 		return
 	}
 
@@ -163,19 +168,24 @@ func (h *HandlerRest) Refresh(w http.ResponseWriter, r *http.Request) {
 	responseReturn(w, http.StatusOK, resp)
 }
 
+// RemoteAddr is already resolved from proxy headers by chi's RealIP middleware,
+// which validates the value, so client headers are not trusted here directly
 func getClientIP(r *http.Request) string {
-	if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
-		return ip
-	}
-	if ip := r.Header.Get("X-Real-IP"); ip != "" {
-		return ip
-	}
-
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
 	}
 	return host
+}
+
+// user_sessions.user_agent is VARCHAR(255)
+const maxUserAgentLen = 255
+
+func truncateUserAgent(ua string) string {
+	if utf8.RuneCountInString(ua) <= maxUserAgentLen {
+		return ua
+	}
+	return string([]rune(ua)[:maxUserAgentLen])
 }
 
 func responseReturn(w http.ResponseWriter, status int, resp any, headers ...httpfeatures.Header) {

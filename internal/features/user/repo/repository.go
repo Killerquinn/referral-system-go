@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -18,51 +17,18 @@ type Repository struct {
 	db *pgxpool.Pool
 }
 
-func New(dsn string) *Repository {
-	const op = "user/repo.New"
-
-	db, err := pgxpool.New(context.Background(), dsn)
-	if err != nil {
-		log.Panicf("%s - %s", op, err)
-	} //add error handling without panic
-
-	if db == nil {
-		log.Panicf("%s - %s", op, "db is nil")
-	}
-
-	if err := db.Ping(context.Background()); err != nil {
-		log.Panicf("%s - %s", op, err)
-	}
-
+func New(db *pgxpool.Pool) *Repository {
 	return &Repository{
 		db: db,
 	}
 }
 
-func (db *Repository) GetConn() (*pgxpool.Conn, error) {
-	const op = "user/repo.GetConn"
-
-	conn, err := db.db.Acquire(context.Background())
-	if err != nil {
-		log.Panicf("%s - %s", op, err)
-	}
-
-	return conn, err
-}
-
 func (r *Repository) PullPassword(ctx context.Context, userID uuid.UUID) (cuurentpass []byte, err error) {
 	const op = "/internal/features/user/repo.PullOldPassword"
 
-	conn, err := r.GetConn()
-	if err != nil {
-		return nil, fmt.Errorf("%s:%w", op, err)
-	}
-
-	defer conn.Release()
-
 	var oldpassword string
 
-	if err := conn.QueryRow(ctx, SelectHashedPassword, userID).Scan(&oldpassword); err != nil {
+	if err := r.db.QueryRow(ctx, SelectHashedPassword, userID).Scan(&oldpassword); err != nil {
 		return nil, fmt.Errorf("%s:%w", op, err)
 	}
 
@@ -73,14 +39,7 @@ func (r *Repository) PullPassword(ctx context.Context, userID uuid.UUID) (cuuren
 func (r *Repository) ChangePassword(ctx context.Context, userID uuid.UUID, newPassword []byte) (err error) {
 	const op = "/internal/features/user/repo.ChangePassword"
 
-	conn, err := r.GetConn()
-	if err != nil {
-		return fmt.Errorf("%s:%w", op, err)
-	}
-
-	defer conn.Release()
-
-	tx, err := conn.Begin(ctx)
+	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("%s:%w", op, err)
 	}
@@ -111,17 +70,10 @@ func (r *Repository) ChangePassword(ctx context.Context, userID uuid.UUID, newPa
 func (r *Repository) IfAbleToChangeReferrer(ctx context.Context, userID uuid.UUID) (availableafter *time.Time, err error) {
 	const op = "/internal/features/user/repo.IfAbleToChangeReferrer"
 
-	conn, err := r.GetConn()
-	if err != nil {
-		return nil, fmt.Errorf("%s:%w", op, err)
-	}
-
-	defer conn.Release()
-
 	var ableafter *time.Time
 	//todo: Add cache there
 
-	if err := conn.QueryRow(ctx, CheckIfAbleToChangeReferrer, userID).Scan(&ableafter); err != nil {
+	if err := r.db.QueryRow(ctx, CheckIfAbleToChangeReferrer, userID).Scan(&ableafter); err != nil {
 
 		return nil, fmt.Errorf("%s:%w", op, err)
 	}
@@ -132,18 +84,11 @@ func (r *Repository) IfAbleToChangeReferrer(ctx context.Context, userID uuid.UUI
 func (r *Repository) ChangeCurrentReferrer(ctx context.Context, userID uuid.UUID, refcode string, newTimestamp time.Time) (err error) {
 	const op = "/internal/features/user/repo.ChangeCurrentReferrer"
 
-	conn, err := r.GetConn()
-	if err != nil {
-		return fmt.Errorf("%s:%w", op, err)
-	}
-
-	defer conn.Release()
-
 	//checking if user doesnt tries to be referrer to himself
 	var referralID string
 	var referrerID string
 	var referrerReferredBy *string
-	if err = conn.QueryRow(ctx, CheckOnSelfReferralAndFindReferrerID, userID, refcode).Scan(&referralID, &referrerID, &referrerReferredBy); err != nil {
+	if err = r.db.QueryRow(ctx, CheckOnSelfReferralAndFindReferrerID, userID, refcode).Scan(&referralID, &referrerID, &referrerReferredBy); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 
 			return sharederrors.ErrSelfReferred
@@ -157,7 +102,7 @@ func (r *Repository) ChangeCurrentReferrer(ctx context.Context, userID uuid.UUID
 		}
 	}
 
-	tx, err := conn.BeginTx(ctx, pgx.TxOptions{})
+	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return fmt.Errorf("%s:%w", op, err)
 	}
@@ -189,15 +134,8 @@ func (r *Repository) ChangeCurrentReferrer(ctx context.Context, userID uuid.UUID
 func (r *Repository) IfReferrerExist(ctx context.Context, refcode string) (err error) {
 	const op = "/internal/features/user/repo.IfReferrerExist"
 
-	conn, err := r.GetConn()
-	if err != nil {
-		return fmt.Errorf("%s:%w", op, err)
-	}
-
-	defer conn.Release()
-
 	var exist bool
-	if err := conn.QueryRow(ctx, SelectIfExist, refcode).Scan(&exist); err != nil {
+	if err := r.db.QueryRow(ctx, SelectIfExist, refcode).Scan(&exist); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) || !exist {
 
 			return sharederrors.ErrReferrerOrReferralCodeDoesntExist
@@ -212,20 +150,15 @@ func (r *Repository) IfReferrerExist(ctx context.Context, refcode string) (err e
 func (r *Repository) CheckAndDeleteUsersAccount(ctx context.Context, userID string) error {
 	const op = "/internal/features/user/repo/repository.go CheckAndDeleteUsersAccount"
 
-	conn, err := r.GetConn()
-	if err != nil {
-		return fmt.Errorf("%s:%w", op, err)
-	}
-
-	defer conn.Release()
-
 	//To-Do: make two queries within transaction, 1 query deletes all referrals table where he is owner and where he is referral
 	//all users with referred by with deleted account must have empty referred by field & last time reffered timestamp have to be reseted
 	//then delete user
 	//if all is oke - tx.Commit()
 
-	tx, err := conn.BeginTx(ctx, pgx.TxOptions{})
-
+	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("%s:%w", op, err)
+	}
 	defer tx.Rollback(ctx)
 
 	if _, err := tx.Exec(ctx, UpdateReferralsCooldown, userID); err != nil {
@@ -249,16 +182,9 @@ func (r *Repository) CheckAndDeleteUsersAccount(ctx context.Context, userID stri
 func (r *Repository) WriteUniqueKey(ctx context.Context, userID string, refCode string) (string, error) {
 	const op = "/internal/features/user/repo/repository.go WriteUniqueKey"
 
-	conn, err := r.GetConn()
-	if err != nil {
-		return "", fmt.Errorf("%s:%w", op, err)
-	}
-
-	defer conn.Release()
-
 	var createdKey string
 
-	if err := conn.QueryRow(ctx, WriteUniqueRefKey, userID, refCode).Scan(&createdKey); err != nil {
+	if err := r.db.QueryRow(ctx, WriteUniqueRefKey, userID, refCode).Scan(&createdKey); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 
 			return "", sharederrors.ErrNotUniqueKey
@@ -273,16 +199,9 @@ func (r *Repository) WriteUniqueKey(ctx context.Context, userID string, refCode 
 func (r *Repository) User(ctx context.Context, callerUserID string, username string) (dto.UserItems, error) {
 	const op = "/internal/features/user/repo/repository.go User"
 
-	conn, err := r.GetConn()
-	if err != nil {
-		return dto.UserItems{}, fmt.Errorf("%s:%w", op, err)
-	}
-
-	defer conn.Release()
-
 	var items dto.UserItems
 
-	if err := conn.QueryRow(ctx, SelectUser, callerUserID, username).Scan(
+	if err := r.db.QueryRow(ctx, SelectUser, callerUserID, username).Scan(
 		&items.Username,
 		&items.ReferredBy,
 		&items.OwnReferral,
@@ -296,20 +215,13 @@ func (r *Repository) User(ctx context.Context, callerUserID string, username str
 		return dto.UserItems{}, fmt.Errorf("%s:%w", op, err)
 	}
 
-	return items, err
+	return items, nil
 }
 
 func (r *Repository) Self(ctx context.Context, userID string) (item dto.SelfUserItems, err error) {
 	const op = "/internal/features/user/repo/repository.go User"
 
-	conn, err := r.GetConn()
-	if err != nil {
-		return dto.SelfUserItems{}, fmt.Errorf("%s:%w", op, err)
-	}
-
-	defer conn.Release()
-
-	if err := conn.QueryRow(ctx, SelectSelf, userID).Scan(
+	if err := r.db.QueryRow(ctx, SelectSelf, userID).Scan(
 		&item.Username,
 		&item.ConnectedEmail,
 		&item.OwnReferral,

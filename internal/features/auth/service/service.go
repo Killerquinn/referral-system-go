@@ -120,15 +120,15 @@ func (auth *Auth) Login(ctx context.Context, email string, password string, user
 		return "", "", fmt.Errorf("%s:%w", op, err)
 	}
 
-	if user.IsBlocked {
-		log.Error("127 - error", zap.Error(err))
-		return "", "", fmt.Errorf("User is currently blocked")
-	}
-
 	//To-Do: add comparing of user agent from DB to incoming request, to send warnings on users email that someone tries to log-in
 
 	if err = bcrypt.CompareHashAndPassword(user.HashedPassword, []byte(password)); err != nil {
 		return "", "", sharederrors.ErrInvalidCreds
+	}
+
+	// checked after the password so ban status isn't revealed to someone who only knows the email
+	if user.IsBlocked {
+		return "", "", sharederrors.ErrUserIsBanned
 	}
 
 	rawrefreshToken, rhash, err := refreshtoken.GenerateRefreshToken(auth.hmacsecret)
@@ -137,7 +137,7 @@ func (auth *Auth) Login(ctx context.Context, email string, password string, user
 		return "", "", fmt.Errorf("%s:%w", op, err)
 	}
 
-	accessToken, err := jwt.GenerateAccessToken(user.ID.String(), string(auth.jwtsecret))
+	accessToken, err := jwt.GenerateAccessToken(user.ID.String(), string(auth.jwtsecret), auth.tokenTTL)
 	if err != nil {
 		log.Error("145 - error", zap.Error(err))
 		return "", "", fmt.Errorf("%s:%w", op, err)
@@ -198,7 +198,7 @@ func (auth *Auth) Refresh(ctx context.Context, rawtoken string, metadata dto.Ses
 		return nil, fmt.Errorf("%s:%w", op, err)
 	}
 
-	access, err := jwt.GenerateAccessToken(userID, string(auth.jwtsecret)) // same func that login use
+	access, err := jwt.GenerateAccessToken(userID, string(auth.jwtsecret), auth.tokenTTL) // same func that login use
 	if err != nil {
 		log.Error("err", zap.Error(err))
 		return nil, fmt.Errorf("%s:%w", op, err)

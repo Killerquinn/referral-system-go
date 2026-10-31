@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -21,49 +20,16 @@ type Repository struct {
 	db *pgxpool.Pool
 }
 
-func New(dsn string) *Repository {
-	const op = "user/repo.New"
-
-	db, err := pgxpool.New(context.Background(), dsn)
-	if err != nil {
-		log.Panicf("%s - %s", op, err)
-	} //add error handling without panic
-
-	if db == nil {
-		log.Panicf("%s - %s", op, "db is nil")
-	}
-
-	if err := db.Ping(context.Background()); err != nil {
-		log.Panicf("%s - %s", op, err)
-	}
-
+func New(db *pgxpool.Pool) *Repository {
 	return &Repository{
 		db: db,
 	}
 }
 
-func (r *Repository) GetConn() (*pgxpool.Conn, error) {
-	const op = "user/repo.GetConn"
-
-	conn, err := r.db.Acquire(context.Background())
-	if err != nil {
-		log.Panicf("%s - %s", op, err)
-	}
-
-	return conn, err
-}
-
 func (r *Repository) User(ctx context.Context, email string) (auth.User, error) {
 	const op = "user/repo.User"
 
-	conn, err := r.GetConn()
-	if err != nil {
-		return auth.User{}, fmt.Errorf("%s:%w", op, err)
-	}
-
-	defer conn.Release()
-
-	rows, err := conn.Query(ctx, getUserByEmail, email)
+	rows, err := r.db.Query(ctx, getUserByEmail, email)
 	if err != nil {
 		return auth.User{}, fmt.Errorf("%s:%w", op, err)
 	}
@@ -83,15 +49,9 @@ func (r *Repository) User(ctx context.Context, email string) (auth.User, error) 
 func (r *Repository) UserExists(ctx context.Context, email string) error { //To-Do: make repository shared to avoid connection collisions and else(I'm building monolith, not microservices)
 	const op = "user/repo.UserExist"
 
-	conn, err := r.GetConn()
-	if err != nil {
-		return fmt.Errorf("%s:%w", op, err)
-	}
-	defer conn.Release()
-
 	var isUserExist bool
 
-	err = conn.QueryRow(ctx, selectIfUserExist, email).Scan(&isUserExist)
+	err := r.db.QueryRow(ctx, selectIfUserExist, email).Scan(&isUserExist)
 	if err != nil {
 		return fmt.Errorf("%s:%w", op, err)
 	}
@@ -106,15 +66,9 @@ func (r *Repository) UserExists(ctx context.Context, email string) error { //To-
 func (r *Repository) SaveNewUser(ctx context.Context, username string, email string, password []byte) (uid string, err error) {
 	const op = "user/repo.SaveNewUser"
 
-	conn, err := r.GetConn()
-	if err != nil {
-		return "", fmt.Errorf("%s:%w", op, err)
-	}
-	defer conn.Release()
-
 	var id string
 
-	err = conn.QueryRow(ctx, createUserQuery, username, email, password).Scan(&id)
+	err = r.db.QueryRow(ctx, createUserQuery, username, email, password).Scan(&id)
 	if err != nil {
 		if pgerr, ok := err.(*pgconn.PgError); ok && pgerr.Code == "23505" {
 			return "", sharederrors.ErrUserAlreadyRegistered
@@ -132,17 +86,11 @@ func (r *Repository) SaveNewUser(ctx context.Context, username string, email str
 func (r *Repository) CreateSession(ctx context.Context, userID uuid.UUID, hashedRefreshToken string, userAgent string, clientIP string, expiresAt time.Time) (refreshToken []byte, err error) {
 	const op = "user/repo.CreateSession"
 
-	conn, err := r.GetConn()
-	if err != nil {
-		return nil, fmt.Errorf("%s:%w", op, err)
-	}
-	defer conn.Release()
-
 	var rToken string
 
 	uid := userID.String()
 
-	err = conn.QueryRow(ctx, postSession, uid, hashedRefreshToken, userAgent, clientIP, expiresAt).Scan(&rToken)
+	err = r.db.QueryRow(ctx, postSession, uid, hashedRefreshToken, userAgent, clientIP, expiresAt).Scan(&rToken)
 	if err != nil {
 		return nil, fmt.Errorf("%s:%w", op, err)
 	}
@@ -153,13 +101,7 @@ func (r *Repository) CreateSession(ctx context.Context, userID uuid.UUID, hashed
 func (r *Repository) DeleteCurrentSession(ctx context.Context, userUUID uuid.UUID) error {
 	const op = "user/repo.DeleteCurrentSession"
 
-	conn, err := r.GetConn()
-	if err != nil {
-		return fmt.Errorf("%s:%w", op, err)
-	}
-	defer conn.Release()
-
-	result, err := conn.Exec(ctx, dropUsersSessionIfExist, userUUID)
+	result, err := r.db.Exec(ctx, dropUsersSessionIfExist, userUUID)
 	if err != nil {
 		return fmt.Errorf("%s:%w", op, err)
 	}
@@ -174,13 +116,7 @@ func (r *Repository) DeleteCurrentSession(ctx context.Context, userUUID uuid.UUI
 func (r *Repository) RotateSession(ctx context.Context, givenRefresh string, newRefresh string, ttl time.Time, metadata dto.SessionMetadata) (userID string, err error) {
 	const op = "user/repo.RotateSession"
 
-	conn, err := r.GetConn()
-	if err != nil {
-		return "", fmt.Errorf("%s:%w", op, err)
-	}
-	defer conn.Release()
-
-	if err := conn.QueryRow(ctx, rotateSession, givenRefresh, newRefresh, ttl, metadata.UserAgent, metadata.ClientIP).Scan(&userID); err != nil {
+	if err := r.db.QueryRow(ctx, rotateSession, givenRefresh, newRefresh, ttl, metadata.UserAgent, metadata.ClientIP).Scan(&userID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", sharederrors.ErrInvalidRefresh
 		}
