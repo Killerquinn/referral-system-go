@@ -143,8 +143,6 @@ func (auth *Auth) Login(ctx context.Context, email string, password string, user
 		return "", "", fmt.Errorf("%s:%w", op, err)
 	}
 
-	fmt.Printf("time duration is - %v, tokenttl - %v", auth.refreshTTL, auth.tokenTTL)
-
 	_, err = auth.sRegister.CreateSession(ctx, user.ID, rhash, userAgent, userIP, time.Now().Add(auth.refreshTTL))
 	if err != nil {
 		log.Error("151 - error", zap.Error(err))
@@ -189,8 +187,6 @@ func (auth *Auth) Refresh(ctx context.Context, rawtoken string, metadata dto.Ses
 		log.Error("err", zap.Error(err))
 		return nil, fmt.Errorf("%s:%w", op, err)
 	}
-
-	fmt.Printf("incoming=%q hash=%s", rawtoken, refreshtoken.HashToken(rawtoken, auth.hmacsecret))
 
 	userID, err := auth.sRegister.RotateSession(ctx, refreshtoken.HashToken(rawtoken, auth.hmacsecret), newHash,
 		time.Now().Add(auth.refreshTTL), metadata)

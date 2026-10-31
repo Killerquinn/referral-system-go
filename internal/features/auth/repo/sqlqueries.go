@@ -49,9 +49,11 @@ const (
 	) VALUES ($1, $2, $3, $4, $5) RETURNING refresh_token_hash
 	`
 	rotateSession = `
-	UPDATE user_sessions
+	UPDATE user_sessions s
 	SET refresh_token_hash = $2, expires_at = $3, user_agent = $4, client_ip = $5
-	WHERE refresh_token_hash = $1 AND expires_at > now()
-	RETURNING user_id
+	FROM users u
+	WHERE s.refresh_token_hash = $1 AND s.expires_at > now()
+		AND u.id = s.user_id AND u.is_blocked IS NOT TRUE
+	RETURNING s.user_id
 	`
 )

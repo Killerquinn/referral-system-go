@@ -80,7 +80,13 @@ func (r *Repository) ChangePassword(ctx context.Context, userID uuid.UUID, newPa
 
 	defer conn.Release()
 
-	result, err := conn.Exec(ctx, UpdateCurrentPassword, string(newPassword), userID)
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("%s:%w", op, err)
+	}
+	defer tx.Rollback(ctx)
+
+	result, err := tx.Exec(ctx, UpdateCurrentPassword, string(newPassword), userID)
 	if err != nil {
 		return fmt.Errorf("%s:%w", op, err)
 	}
@@ -88,6 +94,15 @@ func (r *Repository) ChangePassword(ctx context.Context, userID uuid.UUID, newPa
 	affectedRows := result.RowsAffected()
 	if affectedRows == 0 {
 		return sharederrors.ErrUnnableToChangePassword
+	}
+
+	// password changed -> every issued refresh token must stop working
+	if _, err := tx.Exec(ctx, DeleteAllUserSessions, userID); err != nil {
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("%s:%w", op, err)
 	}
 
 	return nil

@@ -10,6 +10,10 @@ const (
 	WHERE id = $2
 	`
 
+	DeleteAllUserSessions = `
+	DELETE FROM user_sessions WHERE user_id = $1
+	`
+
 	CheckIfAbleToChangeReferrer = `
 	SELECT last_time_ref_used FROM users WHERE id = $1
 	`
