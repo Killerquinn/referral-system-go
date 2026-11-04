@@ -22,4 +22,7 @@ var (
 	ErrInvalidRefresh                    = errors.New("unauthorized, login")
 	ErrInvalidCursorTime                 = errors.New("invalid cursor's time format")
 	ErrAccountAlreadyHaveTheKey          = errors.New("User already claimed his key, unnable to create new one")
+	ErrPostNotFound                      = errors.New("post not found")
+	ErrPostAccessDenied                  = errors.New("access to this post is denied")
+	ErrNotImplemented                    = errors.New("not implemented yet")
 )
