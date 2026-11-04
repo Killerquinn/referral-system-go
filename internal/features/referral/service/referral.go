@@ -110,7 +110,7 @@ func (rfs *RefService) CheckCurrentReferralList(ctx context.Context, referrerID 
 		entities, err = rfs.refCheck.GetReferralsByOwnUserID(ctx, referrerID, cursorTime, cursorID, params.Limit+1)
 	default:
 		log.Info("user tries to check other referrals by username referrals")
-		entities, err = rfs.refCheck.GetReferralsByRefferersUsername(ctx, referrerID, cursorTime, cursorID, params.Limit)
+		entities, err = rfs.refCheck.GetReferralsByRefferersUsername(ctx, referrerID, cursorTime, cursorID, params.Limit+1)
 	}
 
 	if err != nil {
@@ -135,7 +135,7 @@ func (rfs *RefService) CheckCurrentReferralList(ctx context.Context, referrerID 
 		entities = entities[:params.Limit]
 		last := entities[len(entities)-1]
 		raw := fmt.Sprintf("%s|%s", last.JoinedAt.Format(time.RFC3339Nano), last.ID)
-		enc := base64.URLEncoding.EncodeToString([]byte(raw))
+		enc := base64.RawURLEncoding.EncodeToString([]byte(raw))
 		nextCursor = &enc
 	}
 	items := make([]dto.ReferralItem, 0, len(entities))

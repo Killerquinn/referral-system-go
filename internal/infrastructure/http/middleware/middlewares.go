@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	httpfeatures "github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/http-features"
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/jwtcontext"
 	"golang.org/x/time/rate"
 )
@@ -21,13 +22,13 @@ func AuthMiddleware(secret string) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
 			if authHeader == "" {
-				http.Error(w, "ERR_1_NO_HEADER", http.StatusUnauthorized)
+				httpfeatures.WriteError(w, http.StatusUnauthorized, "ERR_1_NO_HEADER")
 				return
 			}
 
 			tokenStr, found := strings.CutPrefix(authHeader, "Bearer ")
 			if !found {
-				http.Error(w, "ERR_1_NO_HEADER", http.StatusUnauthorized)
+				httpfeatures.WriteError(w, http.StatusUnauthorized, "ERR_1_NO_HEADER")
 				return
 			}
 
@@ -40,25 +41,25 @@ func AuthMiddleware(secret string) func(http.Handler) http.Handler {
 
 			if err != nil {
 				log.Printf("--> [JWT PARSE ERROR]: %v", err)
-				http.Error(w, "ERR_2_INVALID_JWT", http.StatusUnauthorized)
+				httpfeatures.WriteError(w, http.StatusUnauthorized, "ERR_2_INVALID_JWT")
 				return
 			}
 
 			if !token.Valid {
-				http.Error(w, "ERR_3_TOKEN_NOT_VALID", http.StatusUnauthorized)
+				httpfeatures.WriteError(w, http.StatusUnauthorized, "ERR_3_TOKEN_NOT_VALID")
 				return
 			}
 
 			claims, ok := token.Claims.(jwt.MapClaims)
 			if !ok {
-				http.Error(w, "ERR_4_BAD_CLAIMS_TYPE", http.StatusUnauthorized)
+				httpfeatures.WriteError(w, http.StatusUnauthorized, "ERR_4_BAD_CLAIMS_TYPE")
 				return
 			}
 
 			subStr, ok := claims["sub"].(string)
 			if !ok {
 				log.Printf("--> [CLAIMS SUB ERROR]: claims['sub'] is %T (%v)", claims["sub"], claims["sub"])
-				http.Error(w, "ERR_5_SUB_NOT_STRING", http.StatusUnauthorized)
+				httpfeatures.WriteError(w, http.StatusUnauthorized, "ERR_5_SUB_NOT_STRING")
 				return
 			}
 
@@ -135,7 +136,7 @@ func (rl *RateLimiter) ByIP(next http.Handler) http.Handler {
 		}
 		if !rl.Allow(ip) {
 			w.Header().Set("Retry-After", rl.retryAfter())
-			http.Error(w, "too many requests", http.StatusTooManyRequests)
+			httpfeatures.WriteError(w, http.StatusTooManyRequests, "too many requests")
 			return
 		}
 		next.ServeHTTP(w, r)

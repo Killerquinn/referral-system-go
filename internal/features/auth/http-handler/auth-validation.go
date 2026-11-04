@@ -9,6 +9,7 @@ import (
 
 	ozzoval "github.com/go-ozzo/ozzo-validation"
 	"github.com/killerquinn/referral-system-go/internal/features/auth/dto"
+	httpfeatures "github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/http-features"
 )
 
 var (
@@ -21,7 +22,7 @@ func ValidateNewUser(req *dto.RegisterNewUserRequest) error {
 		req,
 		ozzoval.Field(&req.Email, ozzoval.Required, ozzoval.By(isValidEmail), ozzoval.Length(7, 60)),
 		ozzoval.Field(&req.Password, ozzoval.Required, ozzoval.By(validatePassword)),
-		ozzoval.Field(&req.Username, ozzoval.Required, ozzoval.Length(5, 20)),
+		ozzoval.Field(&req.Username, ozzoval.Required, ozzoval.Length(httpfeatures.UsernameMinLen, httpfeatures.UsernameMaxLen)),
 	)
 }
 

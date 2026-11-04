@@ -25,6 +25,9 @@ func TimePtrToStringPtr(t *time.Time) *string {
 
 func ParseCursor(cursor string) (parsedTime time.Time, parsedID string, err error) {
 	decodedCursor, err := base64.RawURLEncoding.DecodeString(cursor)
+	if err != nil {
+		return time.Time{}, "", sharederrors.ErrInvalidCursorFormat
+	}
 
 	slice := strings.SplitN(string(decodedCursor), "|", 2)
 	if len(slice) != 2 {

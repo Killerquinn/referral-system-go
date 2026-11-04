@@ -67,7 +67,7 @@ func (uh *UserHandler) ChangeUserPassword(w http.ResponseWriter, r *http.Request
 			responseReturn(w, http.StatusForbidden, dto.ChangeUserPasswordResponse{Message: "Invalid credentials"})
 			return
 		}
-		http.Error(w, "status internal error", http.StatusInternalServerError)
+		responseReturn(w, http.StatusInternalServerError, dto.ChangeUserPasswordResponse{Message: "internal server error"})
 		return
 	}
 
@@ -217,7 +217,7 @@ func (uh *UserHandler) UserByUsername(w http.ResponseWriter, r *http.Request) {
 	param := chi.URLParam(r, "identifier")
 
 	prepparam := strings.TrimSpace(param)
-	if len(prepparam) < 3 || len(prepparam) > 20 {
+	if !httpfeatures.ValidUsernameLength(prepparam) {
 		if len(prepparam) == 0 {
 			resp, err := uh.uService.GetSelf(r.Context(), userID)
 			if err != nil {
@@ -227,11 +227,11 @@ func (uh *UserHandler) UserByUsername(w http.ResponseWriter, r *http.Request) {
 			responseReturn(w, http.StatusOK, resp)
 			return
 		}
-		responseReturn(w, http.StatusBadRequest, dto.UserByUsernameResponse{Message: "status bad request, username cannot be that short/long"})
+		responseReturn(w, http.StatusBadRequest, dto.UserByUsernameResponse{Message: fmt.Sprintf("username must be %d-%d characters long", httpfeatures.UsernameMinLen, httpfeatures.UsernameMaxLen)})
 		return
 	}
 
-	resp, err := uh.uService.FindUserByUsername(r.Context(), userID, param)
+	resp, err := uh.uService.FindUserByUsername(r.Context(), userID, prepparam)
 	if err != nil {
 		if errors.Is(err, sharederrors.ErrUserNotFound) {
 			responseReturn(w, http.StatusNotFound, dto.UserByUsernameResponse{Message: "user with that username doesnt exist"})

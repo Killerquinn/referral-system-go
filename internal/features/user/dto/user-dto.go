@@ -4,11 +4,11 @@ import "time"
 
 type (
 	ChangeUserPasswordRequest struct {
-		OldPass string
-		NewPass string
+		OldPass string `json:"old_password"`
+		NewPass string `json:"new_password"`
 	}
 	ChangeUserPasswordResponse struct {
-		Message string
+		Message string `json:"message"`
 	}
 	ChangeReferrerRequest struct {
 		ReferralCode string `json:"referral_code"`

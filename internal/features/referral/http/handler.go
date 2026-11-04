@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -69,9 +70,8 @@ func (rh *ReferralHandler) CurrentReferralList(w http.ResponseWriter, r *http.Re
 		if err == nil {
 			targetID = userID //not allowing user to find someone by userID
 		} else {
-			if len(preparedIdentifier) < 3 || len(preparedIdentifier) > 32 {
-
-				http.Error(w, "invalid username length", http.StatusBadRequest)
+			if !httpfeatures.ValidUsernameLength(preparedIdentifier) {
+				responseReturn(w, http.StatusBadRequest, dto.CurrentReferralListResponse{Items: []dto.ReferralItem{}, NextCursor: nil, HasMore: false, Message: fmt.Sprintf("username must be %d-%d characters long", httpfeatures.UsernameMinLen, httpfeatures.UsernameMaxLen)})
 				return
 			}
 			targetID = preparedIdentifier
@@ -84,7 +84,7 @@ func (rh *ReferralHandler) CurrentReferralList(w http.ResponseWriter, r *http.Re
 		Limit:      parsedLimit,
 	}
 	params := dto.ReferralListParams{
-		Limit:  5,
+		Limit:  req.Limit,
 		Cursor: req.Cursor,
 	}
 
@@ -150,6 +150,7 @@ func (rh *ReferralHandler) ContestBetweenReferrals(w http.ResponseWriter, r *htt
 		if errors.Is(err, sharederrors.ErrInsufficientQuantityOfReferrals) {
 
 			responseReturn(w, http.StatusForbidden, dto.ContestBetweenReferralsResponse{Winners: nil, Message: "insufficient quantity of referrals to start contest"})
+			return
 		}
 
 		responseReturn(w, http.StatusInternalServerError, dto.ContestBetweenReferralsResponse{Winners: nil, Message: "status internal server error"})
