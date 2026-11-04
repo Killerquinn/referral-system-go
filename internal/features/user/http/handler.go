@@ -42,7 +42,7 @@ var (
 )
 
 func (uh *UserHandler) ChangeUserPassword(w http.ResponseWriter, r *http.Request) {
-	const op = "/internal/features/user/http.ChangeUserPassword"
+	const op = "/internal/features/user/http.ChangeUserPassword!"
 
 	userID, ok := r.Context().Value(jwtcontext.UserIDKey).(string)
 	if !ok {
