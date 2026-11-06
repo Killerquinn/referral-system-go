@@ -7,6 +7,7 @@ import (
 
 	"github.com/killerquinn/referral-system-go/internal/features/post/dto"
 	httpfeatures "github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/http-features"
+	"github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/jwtcontext"
 )
 
 type PostService interface {
@@ -47,8 +48,32 @@ const (
 
 func (ph *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 	const op = "internal/features/post/http CreatePost"
-	// TODO: userID from jwtcontext, decode dto.CreatePostRequest, validate, call service
-	responseReturn(w, http.StatusNotImplemented, dto.CreatePostResponse{Message: "not implemented"})
+
+	userID, ok := r.Context().Value(jwtcontext.UserIDKey).(string)
+	if !ok {
+		responseReturn(w, http.StatusUnauthorized, dto.CreatePostResponse{})
+		return
+	}
+
+	var req dto.CreatePostRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		responseReturn(w, http.StatusBadRequest, dto.CreatePostResponse{})
+		return
+	}
+
+	if len(req.Body) > maxBodyLength {
+		responseReturn(w, http.StatusBadRequest, dto.CreatePostResponse{})
+		return
+	}
+
+	item, err := ph.pService.CreatePost(r.Context(), userID, req)
+	if err != nil {
+		responseReturn(w, http.StatusInternalServerError, dto.CreatePostResponse{})
+		return
+	}
+
+	responseReturn(w, http.StatusOK, dto.CreatePostResponse{Post: &item, Message: "Post successfully created"})
 }
 
 func (ph *PostHandler) GetPost(w http.ResponseWriter, r *http.Request) {
