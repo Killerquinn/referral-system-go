@@ -15,6 +15,8 @@ import (
 	authhttphandler "github.com/killerquinn/referral-system-go/internal/features/auth/http-handler"
 	httphandler "github.com/killerquinn/referral-system-go/internal/features/auth/http-handler"
 	authservice "github.com/killerquinn/referral-system-go/internal/features/auth/service"
+	posthttphandler "github.com/killerquinn/referral-system-go/internal/features/post/http"
+	postservice "github.com/killerquinn/referral-system-go/internal/features/post/service"
 	referralhttphandler "github.com/killerquinn/referral-system-go/internal/features/referral/http"
 	referralservice "github.com/killerquinn/referral-system-go/internal/features/referral/service"
 	userhttphandler "github.com/killerquinn/referral-system-go/internal/features/user/http"
@@ -30,7 +32,7 @@ type App struct {
 	port   string
 }
 
-func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *userservice.Uservice, referral *referralservice.RefService) *App {
+func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *userservice.Uservice, referral *referralservice.RefService, ps *postservice.PostService) *App {
 	r := chi.NewRouter()
 
 	log.Info("adding middleware")
@@ -60,6 +62,7 @@ func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *u
 	newAuthHandler := httphandler.NewAuthHandler(auth, loginEmailLimiter)
 	newUserHandler := userhttphandler.NewUserHandler(user)
 	newReferralHandler := referralhttphandler.NewRefferalHandler(referral)
+	newPostHandler := posthttphandler.NewPostHandler(ps)
 
 	r.Group(func(r chi.Router) {
 		r.Use(localmdw.AuthMiddleware(cfg.JWT.Secret))
@@ -84,6 +87,11 @@ func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *u
 		r.Post("/api/v1/referrals/draw", newReferralHandler.ContestBetweenReferrals)
 		r.Get("/api/v1/referralinfo/{identifier}", newReferralHandler.SeeWhoseReferralAlready)
 		//reward
+		//post
+		r.Post("/api/v1/posts", newPostHandler.CreatePost)
+		r.Get("/api/v1/posts/{postID}", newPostHandler.GetPost)
+		r.Put("/api/v1/posts/{postID}", newPostHandler.UpdatePost)
+		r.Delete("/api/v1/posts/{postID}", newPostHandler.DeletePost)
 	})
 
 	log.Info("setup server")

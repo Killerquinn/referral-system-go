@@ -35,13 +35,13 @@ func NewPostHandler(ps PostService) *PostHandler {
 /*
 Routes (add inside the AuthMiddleware group in rest/chi.go):
 
-	r.Post("/api/v1/posts", newPostHandler.CreatePost)
+	r.Post("/api/v1/posts", newPostHandler.CreatePost) done
 	r.Get("/api/v1/posts/feed", newPostHandler.Feed)
 	r.Get("/api/v1/posts/user", newPostHandler.PostsOfUser)              // own posts
 	r.Get("/api/v1/posts/user/{identifier}", newPostHandler.PostsOfUser) // posts of a user
-	r.Get("/api/v1/posts/{postID}", newPostHandler.GetPost)
-	r.Put("/api/v1/posts/{postID}", newPostHandler.UpdatePost)
-	r.Delete("/api/v1/posts/{postID}", newPostHandler.DeletePost)
+	r.Get("/api/v1/posts/{postID}", newPostHandler.GetPost) done
+	r.Put("/api/v1/posts/{postID}", newPostHandler.UpdatePost) done
+	r.Delete("/api/v1/posts/{postID}", newPostHandler.DeletePost) done
 */
 
 const (
@@ -123,38 +123,38 @@ func (ph *PostHandler) UpdatePost(w http.ResponseWriter, r *http.Request) {
 
 	userID, ok := r.Context().Value(jwtcontext.UserIDKey).(string)
 	if !ok {
-		responseReturn(w, http.StatusUnauthorized, dto.GetPostResponse{})
+		responseReturn(w, http.StatusUnauthorized, dto.UpdatePostResponse{})
 		return
 	}
 
 	postID := chi.URLParam(r, "postID")
 	trimmedPostID := strings.TrimSpace(postID)
 	if len(trimmedPostID) == 0 {
-		responseReturn(w, http.StatusBadRequest, dto.GetPostResponse{Message: "post id cannot be empty"})
+		responseReturn(w, http.StatusBadRequest, dto.UpdatePostResponse{Message: "post id cannot be empty"})
 		return
 	}
 	_, err := uuid.Parse(trimmedPostID)
 	if err != nil {
-		responseReturn(w, http.StatusBadRequest, dto.GetPostResponse{Message: "invalid post id format"})
+		responseReturn(w, http.StatusBadRequest, dto.UpdatePostResponse{Message: "invalid post id format"})
 		return
 	}
 
 	var req dto.UpdatePostRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		responseReturn(w, http.StatusBadRequest, dto.GetPostResponse{})
+		responseReturn(w, http.StatusBadRequest, dto.UpdatePostResponse{})
 		return
 	}
 	if req.Body != nil {
 		if len(*req.Body) > maxBodyLength {
-			responseReturn(w, http.StatusBadRequest, dto.GetPostResponse{})
+			responseReturn(w, http.StatusBadRequest, dto.UpdatePostResponse{})
 			return
 		}
 	}
 
 	updatedPost, err := ph.pService.UpdatePost(r.Context(), userID, trimmedPostID, req)
 	if err != nil {
-		responseReturn(w, http.StatusInternalServerError, dto.GetPostResponse{})
+		responseReturn(w, http.StatusInternalServerError, dto.UpdatePostResponse{})
 		return
 	}
 
@@ -163,8 +163,35 @@ func (ph *PostHandler) UpdatePost(w http.ResponseWriter, r *http.Request) {
 
 func (ph *PostHandler) DeletePost(w http.ResponseWriter, r *http.Request) {
 	const op = "internal/features/post/http DeletePost"
-	// TODO
-	responseReturn(w, http.StatusNotImplemented, dto.DeletePostResponse{Message: "not implemented"})
+
+	userID, ok := r.Context().Value(jwtcontext.UserIDKey).(string)
+	if !ok {
+		responseReturn(w, http.StatusUnauthorized, dto.DeletePostResponse{})
+		return
+	}
+
+	postID := chi.URLParam(r, "postID")
+	trimmedPostID := strings.TrimSpace(postID)
+	if len(trimmedPostID) == 0 {
+		responseReturn(w, http.StatusBadRequest, dto.DeletePostResponse{Message: "post id cannot be empty"})
+		return
+	}
+	_, err := uuid.Parse(trimmedPostID)
+	if err != nil {
+		responseReturn(w, http.StatusBadRequest, dto.DeletePostResponse{Message: "invalid post id format"})
+		return
+	}
+
+	if err := ph.pService.DeletePost(r.Context(), userID, trimmedPostID); err != nil {
+		if errors.Is(err, sharederrors.ErrPostNotFound) {
+			responseReturn(w, http.StatusNotFound, dto.DeletePostResponse{Message: "post not found"})
+			return
+		}
+		responseReturn(w, http.StatusInternalServerError, dto.DeletePostResponse{})
+		return
+	}
+
+	responseReturn(w, http.StatusOK, dto.DeletePostResponse{Message: "post successfully deleted"})
 }
 
 func (ph *PostHandler) Feed(w http.ResponseWriter, r *http.Request) {

@@ -7,6 +7,8 @@ import (
 	"github.com/killerquinn/referral-system-go/internal/config"
 	authrepopackage "github.com/killerquinn/referral-system-go/internal/features/auth/repo"
 	authservice "github.com/killerquinn/referral-system-go/internal/features/auth/service"
+	postrepopackage "github.com/killerquinn/referral-system-go/internal/features/post/repo"
+	postservice "github.com/killerquinn/referral-system-go/internal/features/post/service"
 	referralrepopackage "github.com/killerquinn/referral-system-go/internal/features/referral/repo"
 	referralservice "github.com/killerquinn/referral-system-go/internal/features/referral/service"
 	userrepopackage "github.com/killerquinn/referral-system-go/internal/features/user/repo"
@@ -67,7 +69,15 @@ func New(logger *zap.Logger, pool *pgxpool.Pool, port int, tokenTTL time.Duratio
 		referralrepo,
 	)
 
-	app := rest.NewApp(logger, cfg, authService, userService, referralService)
+	postrepo := postrepopackage.New(pool)
+
+	postservice := postservice.New(
+		logger,
+		cfg.Options.BaseUrl,
+		postrepo,
+	)
+
+	app := rest.NewApp(logger, cfg, authService, userService, referralService, postservice)
 
 	return &App{
 		RestServer: app,
