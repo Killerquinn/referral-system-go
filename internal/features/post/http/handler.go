@@ -3,11 +3,16 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strings"
+	"uuid"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/killerquinn/referral-system-go/internal/features/post/dto"
 	httpfeatures "github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/http-features"
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/jwtcontext"
+	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
 )
 
 type PostService interface {
@@ -78,8 +83,39 @@ func (ph *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 
 func (ph *PostHandler) GetPost(w http.ResponseWriter, r *http.Request) {
 	const op = "internal/features/post/http GetPost"
-	// TODO: chi.URLParam(r, "postID") must be a uuid
-	responseReturn(w, http.StatusNotImplemented, dto.GetPostResponse{Message: "not implemented"})
+	userID, ok := r.Context().Value(jwtcontext.UserIDKey).(string)
+	if !ok {
+		responseReturn(w, http.StatusUnauthorized, dto.GetPostResponse{})
+		return
+	}
+
+	postID := chi.URLParam(r, "postID")
+
+	trimmedPostID := strings.TrimSpace(postID)
+	if len(trimmedPostID) == 0 {
+		responseReturn(w, http.StatusBadRequest, dto.GetPostResponse{Message: "post id cannot be empty"})
+		return
+	}
+	_, err := uuid.Parse(trimmedPostID)
+	if err != nil {
+		responseReturn(w, http.StatusBadRequest, dto.GetPostResponse{Message: "invalid post id format"})
+	}
+
+	postItem, err := ph.pService.GetPost(r.Context(), userID, trimmedPostID)
+	if err != nil {
+		if errors.Is(err, sharederrors.ErrPostNotFound) {
+			responseReturn(w, http.StatusNotFound, dto.GetPostResponse{})
+			return
+		}
+		if errors.Is(err, sharederrors.ErrPostAccessDenied) {
+			responseReturn(w, http.StatusNotAcceptable, dto.GetPostResponse{})
+			return
+		}
+		responseReturn(w, http.StatusInternalServerError, dto.GetPostResponse{})
+		return
+	}
+
+	responseReturn(w, http.StatusOK, dto.GetPostResponse{Post: &postItem, Message: "post successfully found"})
 }
 
 func (ph *PostHandler) UpdatePost(w http.ResponseWriter, r *http.Request) {
