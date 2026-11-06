@@ -120,8 +120,45 @@ func (ph *PostHandler) GetPost(w http.ResponseWriter, r *http.Request) {
 
 func (ph *PostHandler) UpdatePost(w http.ResponseWriter, r *http.Request) {
 	const op = "internal/features/post/http UpdatePost"
-	// TODO
-	responseReturn(w, http.StatusNotImplemented, dto.UpdatePostResponse{Message: "not implemented"})
+
+	userID, ok := r.Context().Value(jwtcontext.UserIDKey).(string)
+	if !ok {
+		responseReturn(w, http.StatusUnauthorized, dto.GetPostResponse{})
+		return
+	}
+
+	postID := chi.URLParam(r, "postID")
+	trimmedPostID := strings.TrimSpace(postID)
+	if len(trimmedPostID) == 0 {
+		responseReturn(w, http.StatusBadRequest, dto.GetPostResponse{Message: "post id cannot be empty"})
+		return
+	}
+	_, err := uuid.Parse(trimmedPostID)
+	if err != nil {
+		responseReturn(w, http.StatusBadRequest, dto.GetPostResponse{Message: "invalid post id format"})
+		return
+	}
+
+	var req dto.UpdatePostRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		responseReturn(w, http.StatusBadRequest, dto.GetPostResponse{})
+		return
+	}
+	if req.Body != nil {
+		if len(*req.Body) > maxBodyLength {
+			responseReturn(w, http.StatusBadRequest, dto.GetPostResponse{})
+			return
+		}
+	}
+
+	updatedPost, err := ph.pService.UpdatePost(r.Context(), userID, trimmedPostID, req)
+	if err != nil {
+		responseReturn(w, http.StatusInternalServerError, dto.GetPostResponse{})
+		return
+	}
+
+	responseReturn(w, http.StatusOK, dto.UpdatePostResponse{Post: &updatedPost, Message: "post successfully updated!"})
 }
 
 func (ph *PostHandler) DeletePost(w http.ResponseWriter, r *http.Request) {
