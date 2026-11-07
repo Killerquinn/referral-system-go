@@ -94,7 +94,13 @@ func (ps *PostService) UpdatePost(ctx context.Context, authorID, postID string, 
 		zap.String("user_id", authorID),
 	)
 
-	return dto.PostItem{}, sharederrors.ErrNotImplemented
+	updatedPost, err := ps.storage.UpdatePost(ctx, postID, authorID, req.Title, req.Body)
+	if err != nil {
+		log.Error("err", zap.Error(err))
+		return dto.PostItem{}, fmt.Errorf("%s:%w", op, err)
+	}
+
+	return updatedPost, err
 }
 
 func (ps *PostService) DeletePost(ctx context.Context, authorID, postID string) error {
@@ -106,7 +112,16 @@ func (ps *PostService) DeletePost(ctx context.Context, authorID, postID string) 
 		zap.String("user_id", authorID),
 	)
 
-	return sharederrors.ErrNotImplemented
+	if err := ps.storage.DeletePost(ctx, postID, authorID); err != nil {
+		if errors.Is(err, sharederrors.ErrPostNotFound) {
+			return sharederrors.ErrPostNotFound
+		}
+		log.Error("err", zap.Error(err))
+
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	return err
 }
 
 // Feed returns posts of the caller's current referrer.
