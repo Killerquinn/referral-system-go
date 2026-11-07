@@ -112,7 +112,8 @@ func (ps *PostService) DeletePost(ctx context.Context, authorID, postID string) 
 		zap.String("user_id", authorID),
 	)
 
-	if err := ps.storage.DeletePost(ctx, postID, authorID); err != nil {
+	err := ps.storage.DeletePost(ctx, postID, authorID)
+	if err != nil {
 		if errors.Is(err, sharederrors.ErrPostNotFound) {
 			return sharederrors.ErrPostNotFound
 		}
