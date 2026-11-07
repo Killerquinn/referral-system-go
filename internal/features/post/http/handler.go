@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"uuid"
 
@@ -197,13 +199,98 @@ func (ph *PostHandler) DeletePost(w http.ResponseWriter, r *http.Request) {
 func (ph *PostHandler) Feed(w http.ResponseWriter, r *http.Request) {
 	const op = "internal/features/post/http Feed"
 	// TODO: ?cursor=&limit=
-	responseReturn(w, http.StatusNotImplemented, dto.PostListResponse{Items: []dto.PostItem{}, Message: "not implemented"})
+
+	userID, ok := r.Context().Value(jwtcontext.UserIDKey).(string)
+	if !ok {
+		responseReturn(w, http.StatusUnauthorized, dto.PostListResponse{Items: []dto.PostItem{}, Message: "unauthorized"})
+		return
+	}
+
+	cursor := r.URL.Query().Get("cursor")
+	limitStr := r.URL.Query().Get("limit")
+
+	parsedLimit := parseLimit(limitStr)
+
+	params := dto.PostListParams{
+		Cursor: cursor,
+		Limit:  parsedLimit,
+	}
+
+	resp, err := ph.pService.Feed(r.Context(), userID, params)
+	if err != nil {
+		responseReturn(w, http.StatusInternalServerError, dto.PostListResponse{Items: []dto.PostItem{}, Message: "internal server error"})
+		return
+	}
+
+	responseReturn(w, http.StatusOK, resp)
 }
 
 func (ph *PostHandler) PostsOfUser(w http.ResponseWriter, r *http.Request) {
 	const op = "internal/features/post/http PostsOfUser"
 	// TODO: identifier optional, validate with httpfeatures.ValidUsernameLength
-	responseReturn(w, http.StatusNotImplemented, dto.PostListResponse{Items: []dto.PostItem{}, Message: "not implemented"})
+	var targetID string
+
+	userID, ok := r.Context().Value(jwtcontext.UserIDKey).(string) //use it in case if identifier is empty
+	if !ok {
+		responseReturn(w, http.StatusUnauthorized, dto.PostListResponse{Items: []dto.PostItem{}, NextCursor: nil, HasMore: false, Message: "unauthorized"})
+		return
+	}
+
+	identifier := chi.URLParam(r, "identifier")
+	cursor := r.URL.Query().Get("cursor")
+	limitStr := r.URL.Query().Get("limit")
+
+	parsedLimit := parseLimit(limitStr)
+
+	preparedIdentifier := strings.TrimSpace(identifier)
+
+	if preparedIdentifier == "" {
+		targetID = userID
+	} else {
+		_, err := uuid.Parse(preparedIdentifier)
+		if err == nil {
+			targetID = userID //not allowing user to find someone by userID
+		} else {
+			if !httpfeatures.ValidUsernameLength(preparedIdentifier) {
+				responseReturn(w, http.StatusBadRequest, dto.PostListResponse{Items: []dto.PostItem{}, NextCursor: nil, HasMore: false, Message: fmt.Sprintf("username must be %d-%d characters long", httpfeatures.UsernameMinLen, httpfeatures.UsernameMaxLen)})
+				return
+			}
+			targetID = preparedIdentifier
+		}
+	}
+
+	params := dto.PostListParams{
+		Cursor: cursor,
+		Limit:  parsedLimit,
+	}
+
+	resp, err := ph.pService.PostsOfUser(r.Context(), userID, targetID, params)
+	if err != nil {
+		if errors.Is(err, sharederrors.ErrPostAccessDenied) {
+			responseReturn(w, http.StatusForbidden, dto.PostListResponse{Items: []dto.PostItem{}, NextCursor: nil, HasMore: false, Message: "not allowed"})
+			return
+		}
+		if errors.Is(err, sharederrors.ErrInvalidCursorFormat) {
+			responseReturn(w, http.StatusBadRequest, dto.PostListResponse{Items: []dto.PostItem{}, NextCursor: nil, HasMore: false, Message: "invalid cursor format"})
+			return
+		}
+		if errors.Is(err, sharederrors.ErrInvalidCursorTime) {
+			responseReturn(w, http.StatusBadRequest, dto.PostListResponse{Items: []dto.PostItem{}, NextCursor: nil, HasMore: false, Message: "invalid time of cursor"})
+			return
+		}
+		if errors.Is(err, sharederrors.ErrUserIsBanned) {
+			responseReturn(w, http.StatusForbidden, dto.PostListResponse{Items: []dto.PostItem{}, NextCursor: nil, HasMore: false, Message: "user is banned"})
+			return
+		}
+		if errors.Is(err, sharederrors.ErrUserNotFound) {
+			responseReturn(w, http.StatusNotFound, dto.PostListResponse{Items: []dto.PostItem{}, NextCursor: nil, HasMore: false, Message: "user not found"})
+			return
+		}
+		responseReturn(w, http.StatusInternalServerError, dto.PostListResponse{Items: []dto.PostItem{}, NextCursor: nil, HasMore: false, Message: "internal server error"})
+		return
+	}
+
+	responseReturn(w, http.StatusOK, resp)
 }
 
 func responseReturn(w http.ResponseWriter, status int, resp any, headers ...httpfeatures.Header) {
@@ -215,4 +302,25 @@ func responseReturn(w http.ResponseWriter, status int, resp any, headers ...http
 
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(resp)
+}
+
+func parseLimit(limitStr string) int {
+	if limitStr == "" {
+		return defaultLimit
+	}
+
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil {
+		return defaultLimit
+	}
+
+	if limit <= 0 {
+		return defaultLimit
+	}
+
+	if limit > maxLimit {
+		return maxLimit
+	}
+
+	return limit
 }
