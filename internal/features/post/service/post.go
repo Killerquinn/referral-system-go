@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/killerquinn/referral-system-go/internal/features/post/dto"
@@ -35,26 +37,75 @@ func New(log *zap.Logger, baseurl string, storage postStorage) *PostService {
 
 func (ps *PostService) CreatePost(ctx context.Context, authorID string, req dto.CreatePostRequest) (dto.PostItem, error) {
 	const op = "internal/features/post/service CreatePost"
-	// TODO
-	return dto.PostItem{}, sharederrors.ErrNotImplemented
+
+	log := ps.log.With(
+		zap.String("op", op),
+		zap.String("user_id", authorID),
+	)
+
+	item, err := ps.storage.CreatePost(ctx, authorID, req.Title, req.Body)
+	if err != nil {
+		log.Error("error", zap.Error(err))
+		return dto.PostItem{}, fmt.Errorf("%s:%w", op, err)
+	}
+
+	return item, sharederrors.ErrNotImplemented
 }
 
 // GetPost returns a post if the caller is its author or the author's referral.
 func (ps *PostService) GetPost(ctx context.Context, callerID, postID string) (dto.PostItem, error) {
 	const op = "internal/features/post/service GetPost"
+
+	log := ps.log.With(
+		zap.String("op", op),
+		zap.String("user_id", callerID),
+	)
+
+	post, err := ps.storage.GetPostByID(ctx, postID)
+	if err != nil {
+		if errors.Is(err, sharederrors.ErrPostNotFound) {
+			return dto.PostItem{}, sharederrors.ErrPostNotFound
+		}
+		if errors.Is(err, sharederrors.ErrUserIsBanned) {
+			return dto.PostItem{}, sharederrors.ErrUserIsBanned
+		}
+		log.Error("error", zap.Error(err))
+		return dto.PostItem{}, fmt.Errorf("%s:%w", op, err)
+	}
 	// TODO: access check -> sharederrors.ErrPostAccessDenied
-	return dto.PostItem{}, sharederrors.ErrNotImplemented
+
+	able, err := ps.storage.CanReadPostsOf(ctx, callerID, post.AuthorID)
+	if err != nil {
+		return dto.PostItem{}, fmt.Errorf("%s:%w", op, err)
+	}
+	if !able {
+		return dto.PostItem{}, sharederrors.ErrPostAccessDenied
+	}
+
+	return post, err
 }
 
 func (ps *PostService) UpdatePost(ctx context.Context, authorID, postID string, req dto.UpdatePostRequest) (dto.PostItem, error) {
 	const op = "internal/features/post/service UpdatePost"
 	// TODO
+
+	log := ps.log.With(
+		zap.String("op", op),
+		zap.String("user_id", authorID),
+	)
+
 	return dto.PostItem{}, sharederrors.ErrNotImplemented
 }
 
 func (ps *PostService) DeletePost(ctx context.Context, authorID, postID string) error {
 	const op = "internal/features/post/service DeletePost"
 	// TODO
+
+	log := ps.log.With(
+		zap.String("op", op),
+		zap.String("user_id", authorID),
+	)
+
 	return sharederrors.ErrNotImplemented
 }
 
@@ -62,6 +113,12 @@ func (ps *PostService) DeletePost(ctx context.Context, authorID, postID string) 
 func (ps *PostService) Feed(ctx context.Context, callerID string, params dto.PostListParams) (*dto.PostListResponse, error) {
 	const op = "internal/features/post/service Feed"
 	// TODO: no referrer -> sharederrors.ErrUserIsNotReferredYet
+
+	log := ps.log.With(
+		zap.String("op", op),
+		zap.String("user_id", authorID),
+	)
+
 	return nil, sharederrors.ErrNotImplemented
 }
 
@@ -69,5 +126,11 @@ func (ps *PostService) Feed(ctx context.Context, callerID string, params dto.Pos
 func (ps *PostService) PostsOfUser(ctx context.Context, callerID, username string, params dto.PostListParams) (*dto.PostListResponse, error) {
 	const op = "internal/features/post/service PostsOfUser"
 	// TODO: access check -> sharederrors.ErrPostAccessDenied
+
+	log := ps.log.With(
+		zap.String("op", op),
+		zap.String("user_id", authorID),
+	)
+
 	return nil, sharederrors.ErrNotImplemented
 }
