@@ -130,9 +130,9 @@ func (ps *PostService) Feed(ctx context.Context, callerID string, params dto.Pos
 	const op = "internal/features/post/service Feed"
 	// TODO: no referrer -> sharederrors.ErrUserIsNotReferredYet
 
-	log := ps.log.With(
+	_ = ps.log.With(
 		zap.String("op", op),
-		zap.String("user_id", authorID),
+		zap.String("user_id", callerID),
 	)
 
 	return nil, sharederrors.ErrNotImplemented
@@ -143,9 +143,9 @@ func (ps *PostService) PostsOfUser(ctx context.Context, callerID, username strin
 	const op = "internal/features/post/service PostsOfUser"
 	// TODO: access check -> sharederrors.ErrPostAccessDenied
 
-	log := ps.log.With(
+	_ = ps.log.With(
 		zap.String("op", op),
-		zap.String("user_id", authorID),
+		zap.String("user_id", callerID),
 	)
 
 	return nil, sharederrors.ErrNotImplemented
