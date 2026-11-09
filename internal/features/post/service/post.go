@@ -226,10 +226,111 @@ func (ps *PostService) PostsOfUser(ctx context.Context, callerID, username strin
 	const op = "internal/features/post/service PostsOfUser"
 	// TODO: access check -> sharederrors.ErrPostAccessDenied
 
-	_ = ps.log.With(
+	log := ps.log.With(
 		zap.String("op", op),
 		zap.String("user_id", callerID),
 	)
+	var check_own bool
 
-	return nil, sharederrors.ErrNotImplemented
+	if callerID != username {
+		able, err := ps.storage.CanReadPostsOf(ctx, callerID, username)
+		if err != nil {
+			if errors.Is(err, sharederrors.ErrUserNotFound) {
+				return nil, err
+			}
+			return nil, fmt.Errorf("%s:%w", op, err)
+		}
+		if !able {
+			return nil, sharederrors.ErrPostAccessDenied
+		}
+	} else {
+		check_own = true
+	}
+
+	if params.Limit <= 0 {
+		params.Limit = 20
+	}
+
+	if params.Limit > 100 {
+		params.Limit = 100
+	}
+
+	var cursorTime *time.Time
+	var cursorID *string
+
+	var (
+		entities []dto.PostItem
+		err      error
+	)
+
+	if params.Cursor == "" {
+		cursorTime = nil
+		cursorID = nil
+	} else {
+		parsedTime, parsedID, err := httpfeatures.ParseCursor(params.Cursor)
+		if err != nil {
+			if errors.Is(err, sharederrors.ErrInvalidCursorFormat) {
+				return nil, err
+			}
+			if errors.Is(err, sharederrors.ErrInvalidCursorTime) {
+				return nil, err
+			}
+
+			log.Error("err", zap.Error(err))
+			return nil, fmt.Errorf("%s:%w", op, err)
+		}
+		cursorTime = &parsedTime
+		cursorID = &parsedID
+	}
+
+	switch check_own {
+	case true:
+		entities, err = ps.storage.GetPostsByAuthorID(ctx, callerID, cursorTime, cursorID, params.Limit)
+		if err != nil {
+			log.Error("err", zap.Error(err))
+
+			return nil, fmt.Errorf("%s:%w", op, err)
+		}
+	default:
+		entities, err = ps.storage.GetPostsByAuthorUsername(ctx, username, cursorTime, cursorID, params.Limit)
+		if err != nil {
+			if errors.Is(err, sharederrors.ErrUserIsBanned) {
+				return nil, err
+			}
+			log.Error("err", zap.Error(err))
+
+			return nil, fmt.Errorf("%s:%w", op, err)
+		}
+	}
+
+	hasMore := false
+	var nextCursor *string
+
+	if len(entities) > params.Limit {
+		hasMore = true
+		entities = entities[:params.Limit]
+		last := entities[len(entities)-1]
+		raw := fmt.Sprintf("%s|%s", last.CreatedAt.Format(time.RFC3339Nano), last.ID)
+		enc := base64.RawURLEncoding.EncodeToString([]byte(raw))
+		nextCursor = &enc
+	}
+	items := make([]dto.PostItem, 0, len(entities))
+	for _, e := range entities {
+		items = append(items, dto.PostItem{
+			ID:             e.ID,
+			AuthorUsername: e.AuthorUsername,
+			AuthorURL:      e.AuthorURL, //add url builder by username
+			Title:          e.Title,
+			Body:           e.Body,
+			CreatedAt:      e.CreatedAt,
+			UpdatedAt:      e.UpdatedAt,
+		})
+	}
+
+	return &dto.PostListResponse{
+		Items:      items,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
+		Message:    "",
+	}, err
 }
