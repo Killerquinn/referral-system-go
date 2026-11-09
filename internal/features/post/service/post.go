@@ -2,11 +2,13 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/killerquinn/referral-system-go/internal/features/post/dto"
+	httpfeatures "github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/http-features"
 	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
 	"go.uber.org/zap"
 )
@@ -19,6 +21,7 @@ type postStorage interface {
 	GetPostsByAuthorID(ctx context.Context, authorID string, cursor *time.Time, lastID *string, limit int) ([]dto.PostItem, error)
 	GetPostsByAuthorUsername(ctx context.Context, username string, cursor *time.Time, lastID *string, limit int) ([]dto.PostItem, error)
 	CanReadPostsOf(ctx context.Context, readerID, authorUsername string) (bool, error)
+	GetFeed(ctx context.Context, callerID string, cursor *time.Time, lastPostID *string, limit int) ([]dto.PostItem, error)
 }
 
 type PostService struct {
@@ -130,12 +133,92 @@ func (ps *PostService) Feed(ctx context.Context, callerID string, params dto.Pos
 	const op = "internal/features/post/service Feed"
 	// TODO: no referrer -> sharederrors.ErrUserIsNotReferredYet
 
-	_ = ps.log.With(
+	log := ps.log.With(
 		zap.String("op", op),
 		zap.String("user_id", callerID),
 	)
 
-	return nil, sharederrors.ErrNotImplemented
+	if params.Limit <= 0 {
+		params.Limit = 20
+	}
+
+	if params.Limit > 100 {
+		params.Limit = 100
+	}
+
+	var cursorTime *time.Time
+	var cursorID *string
+
+	var (
+		entities []dto.PostItem
+		err      error
+	)
+
+	if params.Cursor == "" {
+		cursorTime = nil
+		cursorID = nil
+	} else {
+		parsedTime, parsedID, err := httpfeatures.ParseCursor(params.Cursor)
+		if err != nil {
+			if errors.Is(err, sharederrors.ErrInvalidCursorFormat) {
+				return nil, err
+			}
+			if errors.Is(err, sharederrors.ErrInvalidCursorTime) {
+				return nil, err
+			}
+
+			log.Error("err", zap.Error(err))
+			return nil, fmt.Errorf("%s:%w", op, err)
+		}
+		cursorTime = &parsedTime
+		cursorID = &parsedID
+
+	}
+
+	entities, err = ps.storage.GetFeed(ctx, callerID, cursorTime, cursorID, params.Limit+1)
+	if err != nil {
+		if errors.Is(err, sharederrors.ErrUserIsNotReferredYet) {
+			return nil, err
+		}
+		if errors.Is(err, sharederrors.ErrUserIsBanned) {
+			return nil, err
+		}
+		log.Error("err", zap.Error(err))
+
+		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+
+	hasMore := false
+	var nextCursor *string
+
+	if len(entities) > params.Limit {
+		hasMore = true
+		entities = entities[:params.Limit]
+		last := entities[len(entities)-1]
+		raw := fmt.Sprintf("%s|%s", last.CreatedAt.Format(time.RFC3339Nano), last.ID)
+		enc := base64.RawURLEncoding.EncodeToString([]byte(raw))
+		nextCursor = &enc
+	}
+
+	items := make([]dto.PostItem, 0, len(entities))
+	for _, e := range entities {
+		items = append(items, dto.PostItem{
+			ID:             e.ID,
+			AuthorUsername: e.AuthorUsername,
+			AuthorURL:      e.AuthorURL,
+			Title:          e.Title,
+			Body:           e.Body,
+			CreatedAt:      e.CreatedAt,
+			UpdatedAt:      e.UpdatedAt,
+		})
+	}
+
+	return &dto.PostListResponse{
+		Items:      items,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
+		Message:    "",
+	}, err
 }
 
 // PostsOfUser returns posts of a user; empty username = caller's own posts.

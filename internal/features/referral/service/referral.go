@@ -95,7 +95,7 @@ func (rfs *RefService) CheckCurrentReferralList(ctx context.Context, referrerID 
 			if errors.Is(err, sharederrors.ErrInvalidCursorFormat) {
 				return nil, err
 			}
-			if errors.Is(err, sharederrors.ErrInvalidCursorFormat) {
+			if errors.Is(err, sharederrors.ErrInvalidCursorTime) {
 				return nil, err
 			}
 			return nil, fmt.Errorf("%s:%w", op, err)

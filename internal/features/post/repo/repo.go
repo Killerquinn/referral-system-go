@@ -58,3 +58,9 @@ func (r *Repository) CanReadPostsOf(ctx context.Context, readerID, authorUsernam
 	// TODO: unknown author -> sharederrors.ErrUserNotFound
 	return false, sharederrors.ErrNotImplemented
 }
+
+func (r *Repository) GetFeed(ctx context.Context, callerID string, cursor *time.Time, lastPostID *string, limit int) ([]dto.PostItem, error) {
+	const op = "internal/features/post/repo GetFeed"
+
+	return nil, sharederrors.ErrNotImplemented
+}
