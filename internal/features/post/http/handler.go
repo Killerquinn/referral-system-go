@@ -20,7 +20,7 @@ import (
 type PostService interface {
 	CreatePost(ctx context.Context, authorID string, req dto.CreatePostRequest) (dto.PostItem, error)
 	GetPost(ctx context.Context, callerID, postID string) (dto.PostItem, error)
-	UpdatePost(ctx context.Context, authorID, postID string, req dto.UpdatePostRequest) (dto.PostItem, error)
+	UpdatePost(ctx context.Context, authorID, postID string, req dto.UpdatePostRequest) error
 	DeletePost(ctx context.Context, authorID, postID string) error
 	Feed(ctx context.Context, callerID string, params dto.PostListParams) (*dto.PostListResponse, error)
 	PostsOfUser(ctx context.Context, callerID, username string, params dto.PostListParams) (*dto.PostListResponse, error)
@@ -101,16 +101,21 @@ func (ph *PostHandler) GetPost(w http.ResponseWriter, r *http.Request) {
 	_, err := uuid.Parse(trimmedPostID)
 	if err != nil {
 		responseReturn(w, http.StatusBadRequest, dto.GetPostResponse{Message: "invalid post id format"})
+		return
 	}
 
 	postItem, err := ph.pService.GetPost(r.Context(), userID, trimmedPostID)
 	if err != nil {
 		if errors.Is(err, sharederrors.ErrPostNotFound) {
-			responseReturn(w, http.StatusNotFound, dto.GetPostResponse{})
+			responseReturn(w, http.StatusNotFound, dto.GetPostResponse{Message: "post not found"})
 			return
 		}
 		if errors.Is(err, sharederrors.ErrPostAccessDenied) {
-			responseReturn(w, http.StatusNotAcceptable, dto.GetPostResponse{})
+			responseReturn(w, http.StatusForbidden, dto.GetPostResponse{Message: "not allowed"})
+			return
+		}
+		if errors.Is(err, sharederrors.ErrUserIsBanned) {
+			responseReturn(w, http.StatusForbidden, dto.GetPostResponse{Message: "author is banned"})
 			return
 		}
 		responseReturn(w, http.StatusInternalServerError, dto.GetPostResponse{})
@@ -154,13 +159,17 @@ func (ph *PostHandler) UpdatePost(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	updatedPost, err := ph.pService.UpdatePost(r.Context(), userID, trimmedPostID, req)
+	err = ph.pService.UpdatePost(r.Context(), userID, trimmedPostID, req)
 	if err != nil {
+		if errors.Is(err, sharederrors.ErrPostNotFound) {
+			responseReturn(w, http.StatusNotFound, dto.UpdatePostResponse{Message: "post not found"})
+			return
+		}
 		responseReturn(w, http.StatusInternalServerError, dto.UpdatePostResponse{})
 		return
 	}
 
-	responseReturn(w, http.StatusOK, dto.UpdatePostResponse{Post: &updatedPost, Message: "post successfully updated!"})
+	responseReturn(w, http.StatusOK, dto.UpdatePostResponse{Message: "post successfully updated!"})
 }
 
 func (ph *PostHandler) DeletePost(w http.ResponseWriter, r *http.Request) {
@@ -218,6 +227,22 @@ func (ph *PostHandler) Feed(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := ph.pService.Feed(r.Context(), userID, params)
 	if err != nil {
+		if errors.Is(err, sharederrors.ErrUserIsNotReferredYet) {
+			responseReturn(w, http.StatusNotFound, dto.PostListResponse{Items: []dto.PostItem{}, Message: "you are not referred yet"})
+			return
+		}
+		if errors.Is(err, sharederrors.ErrInvalidCursorFormat) {
+			responseReturn(w, http.StatusBadRequest, dto.PostListResponse{Items: []dto.PostItem{}, Message: "invalid cursor format"})
+			return
+		}
+		if errors.Is(err, sharederrors.ErrInvalidCursorTime) {
+			responseReturn(w, http.StatusBadRequest, dto.PostListResponse{Items: []dto.PostItem{}, Message: "invalid time of cursor"})
+			return
+		}
+		if errors.Is(err, sharederrors.ErrUserIsBanned) {
+			responseReturn(w, http.StatusForbidden, dto.PostListResponse{Items: []dto.PostItem{}, Message: "referrer is banned"})
+			return
+		}
 		responseReturn(w, http.StatusInternalServerError, dto.PostListResponse{Items: []dto.PostItem{}, Message: "internal server error"})
 		return
 	}

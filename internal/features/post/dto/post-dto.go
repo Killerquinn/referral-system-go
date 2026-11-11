@@ -42,8 +42,7 @@ type (
 		Body  *string `json:"body,omitempty"`
 	}
 	UpdatePostResponse struct {
-		Post    *PostItem `json:"post,omitempty"`
-		Message string    `json:"message"`
+		Message string `json:"message"`
 	}
 
 	// ===== delete =====

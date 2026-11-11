@@ -16,7 +16,7 @@ import (
 type postStorage interface {
 	CreatePost(ctx context.Context, authorID, title, body string) (dto.PostItem, error)
 	GetPostByID(ctx context.Context, postID string) (dto.PostItem, error)
-	UpdatePost(ctx context.Context, postID, authorID string, title, body *string) (dto.PostItem, error)
+	UpdatePost(ctx context.Context, postID, authorID string, title, body *string) error
 	DeletePost(ctx context.Context, postID, authorID string) error
 	GetPostsByAuthorID(ctx context.Context, authorID string, cursor *time.Time, lastID *string, limit int) ([]dto.PostItem, error)
 	GetPostsByAuthorUsername(ctx context.Context, username string, cursor *time.Time, lastID *string, limit int) ([]dto.PostItem, error)
@@ -52,7 +52,7 @@ func (ps *PostService) CreatePost(ctx context.Context, authorID string, req dto.
 		return dto.PostItem{}, fmt.Errorf("%s:%w", op, err)
 	}
 
-	return item, sharederrors.ErrNotImplemented
+	return item, nil
 }
 
 // GetPost returns a post if the caller is its author or the author's referral.
@@ -77,7 +77,7 @@ func (ps *PostService) GetPost(ctx context.Context, callerID, postID string) (dt
 	}
 	// TODO: access check -> sharederrors.ErrPostAccessDenied
 
-	able, err := ps.storage.CanReadPostsOf(ctx, callerID, post.AuthorID)
+	able, err := ps.storage.CanReadPostsOf(ctx, callerID, post.AuthorUsername)
 	if err != nil {
 		return dto.PostItem{}, fmt.Errorf("%s:%w", op, err)
 	}
@@ -88,7 +88,7 @@ func (ps *PostService) GetPost(ctx context.Context, callerID, postID string) (dt
 	return post, err
 }
 
-func (ps *PostService) UpdatePost(ctx context.Context, authorID, postID string, req dto.UpdatePostRequest) (dto.PostItem, error) {
+func (ps *PostService) UpdatePost(ctx context.Context, authorID, postID string, req dto.UpdatePostRequest) error {
 	const op = "internal/features/post/service UpdatePost"
 	// TODO
 
@@ -97,13 +97,15 @@ func (ps *PostService) UpdatePost(ctx context.Context, authorID, postID string, 
 		zap.String("user_id", authorID),
 	)
 
-	updatedPost, err := ps.storage.UpdatePost(ctx, postID, authorID, req.Title, req.Body)
-	if err != nil {
+	if err := ps.storage.UpdatePost(ctx, postID, authorID, req.Title, req.Body); err != nil {
+		if errors.Is(err, sharederrors.ErrPostNotFound) {
+			return sharederrors.ErrPostNotFound
+		}
 		log.Error("err", zap.Error(err))
-		return dto.PostItem{}, fmt.Errorf("%s:%w", op, err)
+		return fmt.Errorf("%s:%w", op, err)
 	}
 
-	return updatedPost, err
+	return nil
 }
 
 func (ps *PostService) DeletePost(ctx context.Context, authorID, postID string) error {
@@ -285,14 +287,14 @@ func (ps *PostService) PostsOfUser(ctx context.Context, callerID, username strin
 
 	switch check_own {
 	case true:
-		entities, err = ps.storage.GetPostsByAuthorID(ctx, callerID, cursorTime, cursorID, params.Limit)
+		entities, err = ps.storage.GetPostsByAuthorID(ctx, callerID, cursorTime, cursorID, params.Limit+1)
 		if err != nil {
 			log.Error("err", zap.Error(err))
 
 			return nil, fmt.Errorf("%s:%w", op, err)
 		}
 	default:
-		entities, err = ps.storage.GetPostsByAuthorUsername(ctx, username, cursorTime, cursorID, params.Limit)
+		entities, err = ps.storage.GetPostsByAuthorUsername(ctx, username, cursorTime, cursorID, params.Limit+1)
 		if err != nil {
 			if errors.Is(err, sharederrors.ErrUserIsBanned) {
 				return nil, err
