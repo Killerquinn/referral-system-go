@@ -207,7 +207,7 @@ func (ps *PostService) Feed(ctx context.Context, callerID string, params dto.Pos
 		items = append(items, dto.PostItem{
 			ID:             e.ID,
 			AuthorUsername: e.AuthorUsername,
-			AuthorURL:      e.AuthorURL,
+			AuthorURL:      httpfeatures.BuildUrl(ps.baseurl, e.AuthorUsername),
 			Title:          e.Title,
 			Body:           e.Body,
 			CreatedAt:      e.CreatedAt,
@@ -321,7 +321,7 @@ func (ps *PostService) PostsOfUser(ctx context.Context, callerID, username strin
 		items = append(items, dto.PostItem{
 			ID:             e.ID,
 			AuthorUsername: e.AuthorUsername,
-			AuthorURL:      e.AuthorURL, //add url builder by username
+			AuthorURL:      httpfeatures.BuildUrl(ps.baseurl, e.AuthorUsername), //add url builder by username
 			Title:          e.Title,
 			Body:           e.Body,
 			CreatedAt:      e.CreatedAt,

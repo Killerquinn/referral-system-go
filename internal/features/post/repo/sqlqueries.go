@@ -95,11 +95,12 @@ const (
 	LIMIT $4
 	`
 
-	// $1 reader_id, $2 author username — true if reader is the author or author's referral
-	// (current referrer = users.referred_by_id; referrals table also keeps old links)
+	// $1 reader_id, $2 author username — true if reader is the author, the author's referral,
+	// or the author's referrer (current referrer = users.referred_by_id; referrals table also keeps old links)
 	CanReadPostsOf = `
 	SELECT
 		a.id = $1::uuid
+		OR a.referred_by_id = $1::uuid
 		OR EXISTS (
 			SELECT 1
 			FROM users r
