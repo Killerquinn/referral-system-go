@@ -35,15 +35,15 @@ func NewPostHandler(ps PostService) *PostHandler {
 }
 
 /*
-Routes (add inside the AuthMiddleware group in rest/chi.go):
+Routes (registered inside the AuthMiddleware group in rest/chi.go):
 
-	r.Post("/api/v1/posts", newPostHandler.CreatePost) done
+	r.Post("/api/v1/posts", newPostHandler.CreatePost)
 	r.Get("/api/v1/posts/feed", newPostHandler.Feed)
 	r.Get("/api/v1/posts/user", newPostHandler.PostsOfUser)              // own posts
 	r.Get("/api/v1/posts/user/{identifier}", newPostHandler.PostsOfUser) // posts of a user
-	r.Get("/api/v1/posts/{postID}", newPostHandler.GetPost) done
-	r.Put("/api/v1/posts/{postID}", newPostHandler.UpdatePost) done
-	r.Delete("/api/v1/posts/{postID}", newPostHandler.DeletePost) done
+	r.Get("/api/v1/posts/{postID}", newPostHandler.GetPost)
+	r.Put("/api/v1/posts/{postID}", newPostHandler.UpdatePost)
+	r.Delete("/api/v1/posts/{postID}", newPostHandler.DeletePost)
 */
 
 const (

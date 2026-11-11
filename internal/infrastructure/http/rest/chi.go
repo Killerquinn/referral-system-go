@@ -45,7 +45,8 @@ func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *u
 
 	r.Use(middleware.Recoverer)
 
-	r.Use(middleware.RealIP)
+	// replaces deprecated middleware.RealIP (trusted spoofable X-Forwarded-For / X-Real-IP)
+	r.Use(localmdw.ClientIPResolver(cfg.Server.TrustedProxies))
 
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"http://localhost:5173"},
@@ -89,6 +90,9 @@ func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *u
 		//reward
 		//post
 		r.Post("/api/v1/posts", newPostHandler.CreatePost)
+		r.Get("/api/v1/posts/feed", newPostHandler.Feed)
+		r.Get("/api/v1/posts/user", newPostHandler.PostsOfUser)              // own posts
+		r.Get("/api/v1/posts/user/{identifier}", newPostHandler.PostsOfUser) // posts of a user
 		r.Get("/api/v1/posts/{postID}", newPostHandler.GetPost)
 		r.Put("/api/v1/posts/{postID}", newPostHandler.UpdatePost)
 		r.Delete("/api/v1/posts/{postID}", newPostHandler.DeletePost)

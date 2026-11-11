@@ -6,6 +6,9 @@ server:
   read_header_timeout: 5s
   idle_timeout: 5s
   write_timeout: 5s
+  # CIDRs of reverse proxies allowed to set X-Forwarded-For (e.g. ["127.0.0.1/32"] for nginx on localhost).
+  # Empty = no proxy, client IP comes from the TCP connection.
+  trusted_proxies: []
 
 postgres:
   dsn: "postgres://user:password@localhost:5432/referral_db?sslmode=disable"

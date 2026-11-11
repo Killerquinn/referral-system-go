@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"strings"
 	"unicode/utf8"
@@ -201,14 +200,9 @@ func (h *HandlerRest) Refresh(w http.ResponseWriter, r *http.Request) {
 	responseReturn(w, http.StatusOK, resp)
 }
 
-// RemoteAddr is already resolved from proxy headers by chi's RealIP middleware,
-// which validates the value, so client headers are not trusted here directly
+// client IP is resolved by localmdw.ClientIPResolver; proxy headers are trusted only from configured proxies
 func getClientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
+	return localmdw.ClientIP(r)
 }
 
 // user_sessions.user_agent is VARCHAR(255)

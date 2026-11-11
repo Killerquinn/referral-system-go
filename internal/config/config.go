@@ -35,6 +35,9 @@ type ServerConfig struct {
 	ReadHeaderTimeout time.Duration `koanf:"read_header_timeout" default:"5s"`
 	IdleTimeout       time.Duration `koanf:"idle_timeout" default:"5s"`
 	WriteTimeout      time.Duration `koanf:"write_timeout" default:"5s"`
+	// CIDRs of reverse proxies allowed to set X-Forwarded-For.
+	// Empty = no proxy in front, client IP is taken from the TCP connection.
+	TrustedProxies []string `koanf:"trusted_proxies"`
 }
 
 type PostgresConfig struct {

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	chimdw "github.com/go-chi/chi/v5/middleware"
 	"github.com/golang-jwt/jwt/v5"
 	httpfeatures "github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/http-features"
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/jwtcontext"
@@ -130,15 +131,35 @@ func (rl *RateLimiter) retryAfter() string {
 
 func (rl *RateLimiter) ByIP(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err != nil {
-			ip = r.RemoteAddr
-		}
-		if !rl.Allow(ip) {
+		if !rl.Allow(ClientIP(r)) {
 			w.Header().Set("Retry-After", rl.retryAfter())
 			httpfeatures.WriteError(w, http.StatusTooManyRequests, "too many requests")
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// ClientIPResolver picks how the client IP is resolved and stores it in the request context.
+// No trusted proxies: IP of the TCP peer. Otherwise X-Forwarded-For is walked right-to-left,
+// skipping the trusted proxy ranges, so a client can't spoof its IP with headers.
+// Replaces chi's deprecated RealIP, which trusted X-Forwarded-For/X-Real-IP from anyone.
+func ClientIPResolver(trustedProxies []string) func(http.Handler) http.Handler {
+	if len(trustedProxies) == 0 {
+		return chimdw.ClientIPFromRemoteAddr
+	}
+	return chimdw.ClientIPFromXFF(trustedProxies...)
+}
+
+// ClientIP returns the IP resolved by ClientIPResolver. If it couldn't be resolved
+// (e.g. malformed X-Forwarded-For) it falls back to the TCP peer address.
+func ClientIP(r *http.Request) string {
+	if ip := chimdw.GetClientIP(r.Context()); ip != "" {
+		return ip
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }
