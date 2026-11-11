@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -19,8 +20,21 @@ func New(db *pgxpool.Pool) *Repository {
 
 func (r *Repository) CreatePost(ctx context.Context, authorID, title, body string) (dto.PostItem, error) {
 	const op = "internal/features/post/repo CreatePost"
-	// TODO
-	return dto.PostItem{}, sharederrors.ErrNotImplemented
+
+	var postItem dto.PostItem
+
+	if err := r.db.QueryRow(ctx, InsertPost, authorID, title, body).Scan(
+		&postItem.ID,
+		&postItem.AuthorID,
+		&postItem.AuthorUsername,
+		&postItem.Title,
+		&postItem.Body,
+		&postItem.CreatedAt,
+	); err != nil {
+		return dto.PostItem{}, fmt.Errorf("%s:%w", op, err)
+	}
+
+	return postItem, nil
 }
 
 func (r *Repository) GetPostByID(ctx context.Context, postID string) (dto.PostItem, error) {
