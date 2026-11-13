@@ -25,4 +25,6 @@ var (
 	ErrPostNotFound                      = errors.New("post not found")
 	ErrPostAccessDenied                  = errors.New("access to this post is denied")
 	ErrNotImplemented                    = errors.New("not implemented yet")
+	ErrTierNotFound                      = errors.New("subscription tier not found")
+	ErrTierLimitReached                  = errors.New("maximum number of subscription tiers reached")
 )
