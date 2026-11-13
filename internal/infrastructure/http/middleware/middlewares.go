@@ -70,6 +70,19 @@ func AuthMiddleware(secret string) func(http.Handler) http.Handler {
 	}
 }
 
+// OptionalAuthMiddleware is for public routes that show more to a logged-in user (author page).
+// Valid access token -> jwtcontext.UserIDKey is set, same as AuthMiddleware.
+// No header / malformed / expired / invalid token -> request continues as anonymous, never 401.
+func OptionalAuthMiddleware(secret string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// TODO: same parsing as AuthMiddleware (worth extracting a shared parseUserID(r, secret) (string, error)),
+			// but on any failure just call next.ServeHTTP(w, r) without a user in the context
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 type client struct {
 	limiter  *rate.Limiter
 	lastSeen time.Time
