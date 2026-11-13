@@ -37,3 +37,6 @@ go.work
 ehthumbs.db
 Thumbs.db
 .idea
+
+# Folders
+docs/
