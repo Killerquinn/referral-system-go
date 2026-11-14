@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"mime"
 	"time"
 
 	"github.com/killerquinn/referral-system-go/internal/features/upload/dto"
@@ -89,7 +90,7 @@ var (
 		}
 	}
 
-	// purpose -> content type -> rule. Anything not listed is rejected.
+	// purpose -> content type -> rule. Anything not listed getting rejected.
 	uploadPolicy = map[string]map[string]mediaRule{
 		dto.PurposeAvatar: imageRules(5 * mb),
 		dto.PurposePageBackground: merge(imageRules(10*mb), map[string]mediaRule{
@@ -134,16 +135,63 @@ func incomingKey(uploadID string) string {
 
 // ruleFor finds the rule for purpose + content type.
 func ruleFor(purpose, contentType string) (mediaRule, error) {
-	// TODO: unknown purpose or content type -> sharederrors.ErrUnsupportedMediaType
-	// (normalize contentType: lowercase, cut parameters like "; charset=...")
-	return mediaRule{}, sharederrors.ErrNotImplemented
+	normalizedCT, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return mediaRule{}, sharederrors.ErrUnsupportedMediaType
+	}
+
+	rules, ok := uploadPolicy[purpose]
+	if !ok {
+		return mediaRule{}, sharederrors.ErrUnsupportedMediaType
+	}
+
+	rule, ok := rules[normalizedCT]
+	if !ok {
+		return mediaRule{}, sharederrors.ErrUnsupportedMediaType
+	}
+
+	return rule, nil
 }
 
 // toItem maps a row to the API shape. URL / ThumbURL only for ready files in the public bucket
 // (objects.PublicURL(storage_key / variants.thumb)); never expose incoming_key.
 func (us *UploadService) toItem(row dto.UploadRow) dto.UploadItem {
-	// TODO
-	return dto.UploadItem{}
+	var thumbURL *string
+	var pubURL *string
+
+	if us.objects != nil &&
+		row.Status == dto.StatusReady &&
+		row.Bucket != nil &&
+		*row.Bucket == dto.BucketPublic &&
+		row.StorageKey != nil {
+
+		url := us.objects.PublicURL(*row.StorageKey)
+		pubURL = &url
+
+		if row.Variants != nil &&
+			row.Variants.Thumb != "" {
+			thumbUrl := us.objects.PublicURL(row.Variants.Thumb)
+			thumbURL = &thumbUrl
+		}
+	}
+
+	return dto.UploadItem{
+		ID:               row.ID,
+		MediaType:        row.MediaType,
+		Purpose:          row.Purpose,
+		Status:           row.Status,
+		OriginalFilename: row.OriginalFilename,
+		SizeBytes:        row.SizeBytes,
+		Width:            row.Width,
+		Height:           row.Height,
+		DurationMs:       row.DurationMs,
+		Blurhash:         row.Blurhash,
+		URL:              pubURL,
+		ThumbURL:         thumbURL,
+		Error:            row.Error,
+		CreatedAt:        row.CreatedAt,
+		ReadyAt:          row.ReadyAt,
+	}
 }
 
 // InitUpload validates the request and returns a presigned PUT for the raw file.
@@ -157,6 +205,7 @@ func (us *UploadService) InitUpload(ctx context.Context, userID string, req dto.
 	//  - id := uuid.NewString(); filename: trim, cut to maxFilenameLength, "" -> nil
 	//  - CreateUpload, then PresignPut(PrivateBucket(), incomingKey(id), contentType, size)
 	//    (if presign fails the row stays pending and the cleanup job removes it — that's fine)
+
 	return nil, nil, sharederrors.ErrNotImplemented
 }
 
