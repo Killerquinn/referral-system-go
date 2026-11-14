@@ -3,10 +3,15 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/killerquinn/referral-system-go/internal/features/upload/dto"
 	httpfeatures "github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/http-features"
+	"github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/jwtcontext"
+	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
 )
 
 type UploadService interface {
@@ -51,34 +56,161 @@ Error -> status:
 const maxInitBodyBytes = 4 << 10
 
 func (uh *UploadHandler) InitUpload(w http.ResponseWriter, r *http.Request) {
-	const op = "internal/features/upload/http InitUpload"
-	// TODO: userID from jwtcontext, limit body with maxInitBodyBytes, decode dto.InitUploadRequest,
-	// purpose / content_type required; 201 with upload + target
-	responseReturn(w, http.StatusNotImplemented, dto.InitUploadResponse{Message: "not implemented"})
+
+	userID, ok := r.Context().Value(jwtcontext.UserIDKey).(string)
+	if !ok {
+		responseReturn(w, http.StatusUnauthorized, dto.InitUploadResponse{Message: "unauthorized"})
+		return
+	}
+
+	var req dto.InitUploadRequest
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxInitBodyBytes)
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			responseReturn(w, http.StatusRequestEntityTooLarge, dto.InitUploadResponse{Message: "request entity too large"})
+			return
+		}
+		responseReturn(w, http.StatusBadRequest, dto.InitUploadResponse{Message: "bad request"})
+		return
+	}
+
+	if req.Purpose == "" || req.ContentType == "" || req.Size <= 0 {
+		responseReturn(w, http.StatusBadRequest, dto.InitUploadResponse{Message: "bad request"})
+		return
+	}
+
+	uploadedItem, presignedUpload, err := uh.uService.InitUpload(r.Context(), userID, req)
+	if err != nil {
+		status, msg := serviceErrorStatus(err)
+		responseReturn(w, status, dto.InitUploadResponse{Message: msg})
+	}
+
+	responseReturn(w, http.StatusCreated, dto.InitUploadResponse{Upload: uploadedItem, Target: presignedUpload, Message: "created successfully"})
 }
 
 func (uh *UploadHandler) CompleteUpload(w http.ResponseWriter, r *http.Request) {
-	const op = "internal/features/upload/http CompleteUpload"
-	// TODO: chi.URLParam(r, "uploadID") must be a uuid (invalid -> 404, same as not found)
-	responseReturn(w, http.StatusNotImplemented, dto.UploadResponse{Message: "not implemented"})
+	userID, ok := jwtcontext.GetUserID(r.Context())
+	if !ok {
+		responseReturn(w, http.StatusUnauthorized, dto.UploadResponse{Message: "unauthorized"})
+		return
+	}
+
+	uploadID, ok := uploadIDFromURL(r)
+	if !ok {
+		responseReturn(w, http.StatusNotFound, dto.UploadResponse{Message: sharederrors.ErrUploadNotFound.Error()})
+		return
+	}
+
+	item, err := uh.uService.CompleteUpload(r.Context(), userID, uploadID)
+	if err != nil {
+		status, msg := serviceErrorStatus(err)
+		responseReturn(w, status, dto.UploadResponse{Message: msg})
+		return
+	}
+
+	responseReturn(w, http.StatusOK, dto.UploadResponse{Upload: &item, Message: "upload is being processed"})
 }
 
 func (uh *UploadHandler) GetUpload(w http.ResponseWriter, r *http.Request) {
-	const op = "internal/features/upload/http GetUpload"
-	// TODO: uploadID must be a uuid
-	responseReturn(w, http.StatusNotImplemented, dto.UploadResponse{Message: "not implemented"})
+	userID, ok := jwtcontext.GetUserID(r.Context())
+	if !ok {
+		responseReturn(w, http.StatusUnauthorized, dto.UploadResponse{Message: "unauthorized"})
+		return
+	}
+
+	uploadID, ok := uploadIDFromURL(r)
+	if !ok {
+		responseReturn(w, http.StatusNotFound, dto.UploadResponse{Message: sharederrors.ErrUploadNotFound.Error()})
+		return
+	}
+
+	item, err := uh.uService.GetUpload(r.Context(), userID, uploadID)
+	if err != nil {
+		status, msg := serviceErrorStatus(err)
+		responseReturn(w, status, dto.UploadResponse{Message: msg})
+		return
+	}
+
+	responseReturn(w, http.StatusOK, dto.UploadResponse{Upload: &item, Message: "ok"})
 }
 
 func (uh *UploadHandler) DeleteUpload(w http.ResponseWriter, r *http.Request) {
-	const op = "internal/features/upload/http DeleteUpload"
-	// TODO: uploadID must be a uuid; 204 on success
-	responseReturn(w, http.StatusNotImplemented, dto.MessageResponse{Message: "not implemented"})
+	userID, ok := jwtcontext.GetUserID(r.Context())
+	if !ok {
+		responseReturn(w, http.StatusUnauthorized, dto.MessageResponse{Message: "unauthorized"})
+		return
+	}
+
+	uploadID, ok := uploadIDFromURL(r)
+	if !ok {
+		responseReturn(w, http.StatusNotFound, dto.MessageResponse{Message: sharederrors.ErrUploadNotFound.Error()})
+		return
+	}
+
+	if err := uh.uService.DeleteUpload(r.Context(), userID, uploadID); err != nil {
+		status, msg := serviceErrorStatus(err)
+		responseReturn(w, status, dto.MessageResponse{Message: msg})
+		return
+	}
+
+	// 204 must not have a body
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (uh *UploadHandler) GetQuota(w http.ResponseWriter, r *http.Request) {
-	const op = "internal/features/upload/http GetQuota"
-	// TODO
-	responseReturn(w, http.StatusNotImplemented, dto.QuotaResponse{Message: "not implemented"})
+	userID, ok := jwtcontext.GetUserID(r.Context())
+	if !ok {
+		responseReturn(w, http.StatusUnauthorized, dto.QuotaResponse{Message: "unauthorized"})
+		return
+	}
+
+	quota, err := uh.uService.GetQuota(r.Context(), userID)
+	if err != nil {
+		status, msg := serviceErrorStatus(err)
+		responseReturn(w, status, dto.QuotaResponse{Message: msg})
+		return
+	}
+
+	responseReturn(w, http.StatusOK, dto.QuotaResponse{LimitBytes: quota.LimitBytes, UsedBytes: quota.UsedBytes, Message: "ok"})
+}
+
+// uploadIDFromURL returns {uploadID} if it's a valid uuid. A non-uuid would make Postgres fail
+// with "invalid input syntax for type uuid" (-> 500), so it's answered as "not found" right here.
+func uploadIDFromURL(r *http.Request) (string, bool) {
+	id := chi.URLParam(r, "uploadID")
+	if _, err := uuid.Parse(id); err != nil {
+		return "", false
+	}
+	return id, true
+}
+
+// serviceErrorStatus maps every error the upload service can return to an HTTP status and a message.
+// Known errors carry a human-readable text the frontend can show as is; anything else is a 500
+// with a generic message (the real error may contain SQL / internal details, the service logs it).
+func serviceErrorStatus(err error) (int, string) {
+	switch {
+	case errors.Is(err, sharederrors.ErrUploadNotFound):
+		return http.StatusNotFound, err.Error()
+	case errors.Is(err, sharederrors.ErrUploadNotPending):
+		return http.StatusConflict, err.Error()
+	case errors.Is(err, sharederrors.ErrUploadIncomplete):
+		return http.StatusBadRequest, err.Error()
+	case errors.Is(err, sharederrors.ErrUnsupportedMediaType):
+		return http.StatusUnsupportedMediaType, err.Error()
+	case errors.Is(err, sharederrors.ErrFileTooLarge):
+		return http.StatusRequestEntityTooLarge, err.Error()
+	case errors.Is(err, sharederrors.ErrTooManyPendingUploads):
+		return http.StatusTooManyRequests, err.Error()
+	case errors.Is(err, sharederrors.ErrStorageQuotaExceeded):
+		return http.StatusForbidden, err.Error()
+	case errors.Is(err, sharederrors.ErrStorageUnavailable):
+		return http.StatusServiceUnavailable, err.Error()
+	default:
+		return http.StatusInternalServerError, "internal server error"
+	}
 }
 
 func responseReturn(w http.ResponseWriter, status int, resp any, headers ...httpfeatures.Header) {

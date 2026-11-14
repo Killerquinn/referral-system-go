@@ -110,7 +110,7 @@ var (
 
 const (
 	defaultStorageLimit = 500 * mb
-	maxPendingUploads   = 10        // per user within pendingWindow — stops spamming presigned URLs
+	maxPendingUploads   = 10 // per user within pendingWindow — stops spamming presigned URLs
 	pendingWindow       = time.Hour
 	maxFilenameLength   = 255
 	incomingPrefix      = "incoming/"
