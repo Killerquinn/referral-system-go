@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"mime"
 	"strings"
@@ -293,7 +294,63 @@ func (us *UploadService) CompleteUpload(ctx context.Context, userID, uploadID st
 	//  - Head(PrivateBucket(), incoming_key): r2.ErrObjectNotFound or size != declared -> sharederrors.ErrUploadIncomplete
 	//  - MarkProcessing(size from Head)
 	//  - queue != nil -> EnqueueProcessUpload (error: log it, row stays processing, cleanup job can retry)
-	return dto.UploadItem{}, sharederrors.ErrNotImplemented
+
+	log := us.log.With(
+		zap.String("op", op),
+		zap.String("user_id", userID),
+		zap.String("upload_id", uploadID),
+	)
+
+	if us.objects == nil {
+		return dto.UploadItem{}, sharederrors.ErrStorageUnavailable
+	}
+
+	row, err := us.storage.GetUpload(ctx, uploadID)
+	if err != nil {
+		if errors.Is(err, sharederrors.ErrUploadNotFound) {
+			return dto.UploadItem{}, sharederrors.ErrUploadNotFound
+		}
+		log.Error("err", zap.Error(err))
+
+		return dto.UploadItem{}, fmt.Errorf("%s:%w", op, err)
+	}
+
+	if row.OwnerID != userID {
+		return dto.UploadItem{}, sharederrors.ErrUploadNotFound
+	}
+	if row.Status != dto.StatusPending {
+		return dto.UploadItem{}, sharederrors.ErrUploadNotPending
+	}
+
+	info, err := us.objects.Head(ctx, us.objects.PrivateBucket(), row.IncomingKey)
+	if err != nil {
+		if errors.Is(err, r2.ErrObjectNotFound) {
+			return dto.UploadItem{}, sharederrors.ErrUploadIncomplete
+		}
+		log.Error("err", zap.Error(err))
+
+		return dto.UploadItem{}, fmt.Errorf("%s:%w", op, err)
+	}
+	if info.Size != row.DeclaredSizeBytes {
+		return dto.UploadItem{}, sharederrors.ErrUploadIncomplete
+	}
+
+	row, err = us.storage.MarkProcessing(ctx, uploadID, userID, info.Size)
+	if err != nil {
+		if errors.Is(err, sharederrors.ErrUploadNotPending) {
+			return dto.UploadItem{}, err
+		}
+		log.Error("err", zap.Error(err))
+	}
+
+	if us.queue != nil {
+		err := us.queue.EnqueueProcessUpload(ctx, uploadID)
+		if err != nil {
+			log.Error("queue error", zap.Error(err))
+		}
+	}
+
+	return us.toItem(row), nil
 }
 
 func (us *UploadService) GetUpload(ctx context.Context, userID, uploadID string) (dto.UploadItem, error) {
