@@ -156,7 +156,6 @@ func (uh *UploadHandler) DeleteUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 204 must not have a body
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -177,8 +176,6 @@ func (uh *UploadHandler) GetQuota(w http.ResponseWriter, r *http.Request) {
 	responseReturn(w, http.StatusOK, dto.QuotaResponse{LimitBytes: quota.LimitBytes, UsedBytes: quota.UsedBytes, Message: "ok"})
 }
 
-// uploadIDFromURL returns {uploadID} if it's a valid uuid. A non-uuid would make Postgres fail
-// with "invalid input syntax for type uuid" (-> 500), so it's answered as "not found" right here.
 func uploadIDFromURL(r *http.Request) (string, bool) {
 	id := chi.URLParam(r, "uploadID")
 	if _, err := uuid.Parse(id); err != nil {
@@ -187,9 +184,6 @@ func uploadIDFromURL(r *http.Request) (string, bool) {
 	return id, true
 }
 
-// serviceErrorStatus maps every error the upload service can return to an HTTP status and a message.
-// Known errors carry a human-readable text the frontend can show as is; anything else is a 500
-// with a generic message (the real error may contain SQL / internal details, the service logs it).
 func serviceErrorStatus(err error) (int, string) {
 	switch {
 	case errors.Is(err, sharederrors.ErrUploadNotFound):
