@@ -200,14 +200,6 @@ func (us *UploadService) toItem(row dto.UploadRow) dto.UploadItem {
 // InitUpload validates the request and returns a presigned PUT for the raw file.
 func (us *UploadService) InitUpload(ctx context.Context, userID string, req dto.InitUploadRequest) (*dto.UploadItem, *dto.PresignedUpload, error) {
 	const op = "internal/features/upload/service InitUpload"
-	// TODO:
-	//  - objects == nil -> sharederrors.ErrStorageUnavailable
-	//  - ruleFor(purpose, content type); size <= 0 -> 400, size > rule.maxBytes -> sharederrors.ErrFileTooLarge
-	//  - CountRecentPending(now - pendingWindow) >= maxPendingUploads -> sharederrors.ErrTooManyPendingUploads
-	//  - EnsureQuota: used + size > limit -> sharederrors.ErrStorageQuotaExceeded
-	//  - id := uuid.NewString(); filename: trim, cut to maxFilenameLength, "" -> nil
-	//  - CreateUpload, then PresignPut(PrivateBucket(), incomingKey(id), contentType, size)
-	//    (if presign fails the row stays pending and the cleanup job removes it — that's fine)
 
 	log := us.log.With(
 		zap.String("op", op),
