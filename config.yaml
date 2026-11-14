@@ -18,6 +18,13 @@ postgres:
   max_connection_idle_time: 30m
   health_check_period: 10s
 
+r2:
+  account_id: "accountid"
+  public_bucket: "media"
+  private_bucket: "prmedia"
+  public_base_url: "https://pub-3e677a8a6ec240e98922f26ebcf2ad4a.r2.dev"
+  presign_ttl: 15m
+
 stripe:
   secret_key: "sk_test_..." 
   webhook_secret: "whsec_..."

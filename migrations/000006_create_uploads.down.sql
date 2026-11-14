@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS media_quotas;
+DROP TABLE IF EXISTS uploads;

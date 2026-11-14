@@ -19,6 +19,7 @@ var k = koanf.New(".")
 type Config struct {
 	Server   ServerConfig
 	Postgres PostgresConfig
+	R2       R2Config
 	Stripe   StripeConfig
 	Jaeger   JaegerConfig
 	//Prometheus PrometheusConfig
@@ -49,9 +50,25 @@ type PostgresConfig struct {
 	HealthCheckPeriod         time.Duration `koanf:"health_check_period" default:"10s"`
 }
 
+// R2Config — Cloudflare R2 via its S3-compatible API.
+// Only the S3 access key pair is needed; a Cloudflare API token is not used at runtime.
+type R2Config struct {
+	AccountID       string `koanf:"account_id"`
+	AccessKeyID     string `koanf:"access_key_id"`
+	SecretAccessKey string `koanf:"secret_access_key"`
+	// Public bucket: avatars, page backgrounds, music — served directly via PublicBaseURL.
+	PublicBucket string `koanf:"public_bucket"`
+	// Private bucket: paid post media — served only via short-lived presigned GET URLs.
+	PrivateBucket string `koanf:"private_bucket"`
+	// r2.dev subdomain or custom domain bound to the public bucket, no trailing slash.
+	PublicBaseURL string `koanf:"public_base_url"`
+	// Lifetime of presigned upload / download URLs.
+	PresignTTL time.Duration `koanf:"presign_ttl"`
+}
+
 type StripeConfig struct {
-	SecretKey     string `koanf:"APP_STRIPE_SECRET_KEY"`
-	WebhookSecret string `koanf:"APP_STRIPE_WEBHOOK_SECRET"`
+	SecretKey     string `koanf:"secret_key"`
+	WebhookSecret string `koanf:"webhook_secret"`
 }
 
 type JaegerConfig struct {
@@ -87,14 +104,20 @@ func LoadConfig() *Config {
 		switch s {
 		case "APP_POSTGRES_DSN":
 			return "postgres.dsn"
-		case "STRIPE_SECRET_KEY":
+		case "APP_STRIPE_SECRET_KEY":
 			return "stripe.secret_key"
-		case "STRIPE_WEBHOOK_SECRET":
+		case "APP_STRIPE_WEBHOOK_SECRET":
 			return "stripe.webhook_secret"
 		case "APP_JWT_SECRET_KEY":
 			return "jwt.secret_key"
 		case "APP_HMAC_SECRET_KEY":
 			return "refresh.hmac_secret"
+		case "APP_R2_ACCOUNT_ID":
+			return "r2.account_id"
+		case "APP_R2_ACCESS_ID_S3":
+			return "r2.access_key_id"
+		case "APP_R2_SECRET_ACCESS_KEY":
+			return "r2.secret_access_key"
 		default:
 			return strings.ToLower(s)
 		}
@@ -116,6 +139,10 @@ func LoadConfig() *Config {
 	if cfg.Server.Name == "" {
 		cfg.Server.Name = "local_project"
 	}
+	if cfg.R2.PresignTTL == 0 {
+		cfg.R2.PresignTTL = 15 * time.Minute
+	}
+	cfg.R2.PublicBaseURL = strings.TrimRight(cfg.R2.PublicBaseURL, "/")
 
 	return &cfg
 }

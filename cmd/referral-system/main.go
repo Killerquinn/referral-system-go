@@ -11,6 +11,7 @@ import (
 	"github.com/killerquinn/referral-system-go/internal/config"
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/database"
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/http/rest/app"
+	"github.com/killerquinn/referral-system-go/internal/infrastructure/storage/r2"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -42,6 +43,22 @@ func main() {
 			log.Error("failed to close postgres pool", zap.Error(err))
 		}
 	}(postgres)
+
+	// object storage (Cloudflare R2). Not wired into features yet — uploads come next.
+	storage, err := r2.New(cfg.R2)
+	if err != nil {
+		log.Warn("r2 storage disabled", zap.Error(err))
+	} else {
+		checkCtx, checkCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		if err := storage.CheckBuckets(checkCtx); err != nil {
+			log.Error("r2 bucket check failed", zap.Error(err))
+		} else {
+			log.Info("r2 storage connected",
+				zap.String("public_bucket", storage.PublicBucket()),
+				zap.String("private_bucket", storage.PrivateBucket()))
+		}
+		checkCancel()
+	}
 
 	//start server
 
