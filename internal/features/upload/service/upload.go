@@ -2,9 +2,12 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"mime"
+	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/killerquinn/referral-system-go/internal/features/upload/dto"
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/storage/r2"
 	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
@@ -134,23 +137,23 @@ func incomingKey(uploadID string) string {
 }
 
 // ruleFor finds the rule for purpose + content type.
-func ruleFor(purpose, contentType string) (mediaRule, error) {
+func ruleFor(purpose, contentType string) (mediaRule, string, error) {
 	normalizedCT, _, err := mime.ParseMediaType(contentType)
 	if err != nil {
-		return mediaRule{}, sharederrors.ErrUnsupportedMediaType
+		return mediaRule{}, "", sharederrors.ErrUnsupportedMediaType
 	}
 
 	rules, ok := uploadPolicy[purpose]
 	if !ok {
-		return mediaRule{}, sharederrors.ErrUnsupportedMediaType
+		return mediaRule{}, "", sharederrors.ErrUnsupportedMediaType
 	}
 
 	rule, ok := rules[normalizedCT]
 	if !ok {
-		return mediaRule{}, sharederrors.ErrUnsupportedMediaType
+		return mediaRule{}, "", sharederrors.ErrUnsupportedMediaType
 	}
 
-	return rule, nil
+	return rule, normalizedCT, nil
 }
 
 // toItem maps a row to the API shape. URL / ThumbURL only for ready files in the public bucket
@@ -206,7 +209,87 @@ func (us *UploadService) InitUpload(ctx context.Context, userID string, req dto.
 	//  - CreateUpload, then PresignPut(PrivateBucket(), incomingKey(id), contentType, size)
 	//    (if presign fails the row stays pending and the cleanup job removes it — that's fine)
 
-	return nil, nil, sharederrors.ErrNotImplemented
+	log := us.log.With(
+		zap.String("op", op),
+		zap.String("user_id", userID),
+	)
+
+	if us.objects == nil {
+		return nil, nil, sharederrors.ErrStorageUnavailable
+	}
+
+	rule, cType, err := ruleFor(req.Purpose, req.ContentType)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if req.Size > rule.maxBytes {
+		return nil, nil, sharederrors.ErrFileTooLarge
+	}
+
+	recentPended, err := us.storage.CountRecentPending(ctx, userID, time.Now().Add(-pendingWindow))
+	if err != nil {
+		log.Error("err", zap.Error(err))
+
+		return nil, nil, fmt.Errorf("%s:%w", op, err)
+	}
+	if recentPended >= maxPendingUploads {
+		return nil, nil, sharederrors.ErrTooManyPendingUploads
+	}
+
+	quota, err := us.storage.EnsureQuota(ctx, userID, defaultStorageLimit)
+	if err != nil {
+		log.Error("err", zap.Error(err))
+
+		return nil, nil, fmt.Errorf("%s:%w", op, err)
+	}
+
+	if quota.UsedBytes+req.Size > quota.LimitBytes {
+		return nil, nil, sharederrors.ErrStorageQuotaExceeded
+	}
+
+	id := uuid.NewString()
+
+	var filename *string
+
+	if name := strings.TrimSpace(req.Filename); name != "" {
+		if r := []rune(name); len(r) > maxFilenameLength {
+			name = string(r[:maxFilenameLength])
+		}
+		filename = &name
+	}
+
+	row, err := us.storage.CreateUpload(ctx, dto.CreateUploadParams{
+		ID:                  id,
+		OwnerID:             userID,
+		Purpose:             req.Purpose,
+		MediaType:           rule.mediaType,
+		IncomingKey:         incomingKey(id),
+		DeclaredContentType: cType,
+		DeclaredSizeBytes:   req.Size,
+		OriginalFilename:    filename,
+	})
+	if err != nil {
+		log.Error("err", zap.Error(err))
+
+		return nil, nil, fmt.Errorf("%s:%w", op, err)
+	}
+
+	presigned, err := us.objects.PresignPut(ctx, us.objects.PrivateBucket(), incomingKey(id), cType, req.Size)
+	if err != nil {
+		log.Error("err", zap.Error(err))
+
+		return nil, nil, fmt.Errorf("%s:%w", op, err)
+	}
+
+	item := us.toItem(row)
+
+	return &item, &dto.PresignedUpload{
+		URL:       presigned.URL,
+		Method:    presigned.Method,
+		Headers:   presigned.Headers,
+		ExpiresAt: presigned.ExpiresAt,
+	}, nil
 }
 
 // CompleteUpload is called by the frontend after the PUT to R2 succeeded.
