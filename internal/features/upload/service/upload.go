@@ -288,12 +288,6 @@ func (us *UploadService) InitUpload(ctx context.Context, userID string, req dto.
 // CompleteUpload is called by the frontend after the PUT to R2 succeeded.
 func (us *UploadService) CompleteUpload(ctx context.Context, userID, uploadID string) (dto.UploadItem, error) {
 	const op = "internal/features/upload/service CompleteUpload"
-	// TODO:
-	//  - GetUpload: not found OR owner != userID -> sharederrors.ErrUploadNotFound (don't reveal other users' uploads)
-	//  - status != pending -> sharederrors.ErrUploadNotPending
-	//  - Head(PrivateBucket(), incoming_key): r2.ErrObjectNotFound or size != declared -> sharederrors.ErrUploadIncomplete
-	//  - MarkProcessing(size from Head)
-	//  - queue != nil -> EnqueueProcessUpload (error: log it, row stays processing, cleanup job can retry)
 
 	log := us.log.With(
 		zap.String("op", op),
