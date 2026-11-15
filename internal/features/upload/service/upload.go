@@ -222,7 +222,7 @@ func (us *UploadService) InitUpload(ctx context.Context, userID string, req dto.
 
 	recentPended, err := us.storage.CountRecentPending(ctx, userID, time.Now().Add(-pendingWindow))
 	if err != nil {
-		log.Error("err", zap.Error(err))
+		log.Error("method CountRecentPending failed", zap.Error(err))
 
 		return nil, nil, fmt.Errorf("%s:%w", op, err)
 	}
@@ -232,7 +232,7 @@ func (us *UploadService) InitUpload(ctx context.Context, userID string, req dto.
 
 	quota, err := us.storage.EnsureQuota(ctx, userID, defaultStorageLimit)
 	if err != nil {
-		log.Error("err", zap.Error(err))
+		log.Error("method EnsureQuota failed", zap.Error(err))
 
 		return nil, nil, fmt.Errorf("%s:%w", op, err)
 	}
@@ -263,14 +263,14 @@ func (us *UploadService) InitUpload(ctx context.Context, userID string, req dto.
 		OriginalFilename:    filename,
 	})
 	if err != nil {
-		log.Error("err", zap.Error(err))
+		log.Error("method CreateUpload failed", zap.Error(err))
 
 		return nil, nil, fmt.Errorf("%s:%w", op, err)
 	}
 
 	presigned, err := us.objects.PresignPut(ctx, us.objects.PrivateBucket(), incomingKey(id), cType, req.Size)
 	if err != nil {
-		log.Error("err", zap.Error(err))
+		log.Error("method PresignPut failed", zap.Error(err))
 
 		return nil, nil, fmt.Errorf("%s:%w", op, err)
 	}
@@ -304,7 +304,7 @@ func (us *UploadService) CompleteUpload(ctx context.Context, userID, uploadID st
 		if errors.Is(err, sharederrors.ErrUploadNotFound) {
 			return dto.UploadItem{}, sharederrors.ErrUploadNotFound
 		}
-		log.Error("err", zap.Error(err))
+		log.Error("method GetUpload failed", zap.Error(err))
 
 		return dto.UploadItem{}, fmt.Errorf("%s:%w", op, err)
 	}
@@ -321,7 +321,7 @@ func (us *UploadService) CompleteUpload(ctx context.Context, userID, uploadID st
 		if errors.Is(err, r2.ErrObjectNotFound) {
 			return dto.UploadItem{}, sharederrors.ErrUploadIncomplete
 		}
-		log.Error("err", zap.Error(err))
+		log.Error("object storage failed on method Head", zap.Error(err))
 
 		return dto.UploadItem{}, fmt.Errorf("%s:%w", op, err)
 	}
@@ -334,7 +334,8 @@ func (us *UploadService) CompleteUpload(ctx context.Context, userID, uploadID st
 		if errors.Is(err, sharederrors.ErrUploadNotPending) {
 			return dto.UploadItem{}, err
 		}
-		log.Error("err", zap.Error(err))
+		log.Error("mark processing failed", zap.Error(err))
+		return dto.UploadItem{}, fmt.Errorf("%s:%w", op, err)
 	}
 
 	if us.queue != nil {
@@ -350,7 +351,28 @@ func (us *UploadService) CompleteUpload(ctx context.Context, userID, uploadID st
 func (us *UploadService) GetUpload(ctx context.Context, userID, uploadID string) (dto.UploadItem, error) {
 	const op = "internal/features/upload/service GetUpload"
 	// TODO: not found OR not the owner -> sharederrors.ErrUploadNotFound
-	return dto.UploadItem{}, sharederrors.ErrNotImplemented
+
+	log := us.log.With(
+		zap.String("op", op),
+		zap.String("user_id", userID),
+		zap.String("upload_id", uploadID),
+	)
+
+	row, err := us.storage.GetUpload(ctx, uploadID)
+	if err != nil {
+		if errors.Is(err, sharederrors.ErrUploadNotFound) {
+			return dto.UploadItem{}, err
+		}
+		log.Error("err", zap.Error(err))
+
+		return dto.UploadItem{}, fmt.Errorf("%s:%w", op, err)
+	}
+
+	if row.OwnerID != userID {
+		return dto.UploadItem{}, sharederrors.ErrUploadNotFound
+	}
+
+	return us.toItem(row), nil
 }
 
 // DeleteUpload removes the row and the files. Later: refuse (or detach) if the upload is used
@@ -362,6 +384,13 @@ func (us *UploadService) DeleteUpload(ctx context.Context, userID, uploadID stri
 	//  - then delete objects: incoming_key (private), storage_key + variants (in their bucket).
 	//    DB first, files second: a leftover file is just garbage, a row pointing to a missing file is a bug.
 	//    Storage errors -> log, don't fail the request.
+
+	log := us.log.With(
+		zap.String("op", op),
+		zap.String("user_id", userID),
+		zap.String("upload_id", uploadID),
+	)
+
 	return sharederrors.ErrNotImplemented
 }
 
