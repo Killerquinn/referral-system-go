@@ -197,6 +197,12 @@ func (us *UploadService) toItem(row dto.UploadRow) dto.UploadItem {
 		ReadyAt:          row.ReadyAt,
 	}
 }
+func (us *UploadService) bucketName(bucket string) string {
+	if bucket == dto.BucketPublic {
+		return us.objects.PublicBucket()
+	}
+	return us.objects.PrivateBucket()
+}
 
 // InitUpload validates the request and returns a presigned PUT for the raw file.
 func (us *UploadService) InitUpload(ctx context.Context, userID string, req dto.InitUploadRequest) (*dto.UploadItem, *dto.PresignedUpload, error) {
@@ -378,11 +384,6 @@ func (us *UploadService) GetUpload(ctx context.Context, userID, uploadID string)
 // by the page settings or attached to a post.
 func (us *UploadService) DeleteUpload(ctx context.Context, userID, uploadID string) error {
 	const op = "internal/features/upload/service DeleteUpload"
-	// TODO:
-	//  - DeleteUpload in repo (owner check in SQL) -> 0 rows -> sharederrors.ErrUploadNotFound
-	//  - then delete objects: incoming_key (private), storage_key + variants (in their bucket).
-	//    DB first, files second: a leftover file is just garbage, a row pointing to a missing file is a bug.
-	//    Storage errors -> log, don't fail the request.
 
 	log := us.log.With(
 		zap.String("op", op),
@@ -403,7 +404,38 @@ func (us *UploadService) DeleteUpload(ctx context.Context, userID, uploadID stri
 		return fmt.Errorf("%s:%w", op, err)
 	}
 
-	return sharederrors.ErrNotImplemented
+	type object struct {
+		bucket string
+		key    string
+	}
+	var toDelete []object
+
+	toDelete = append(toDelete, object{bucket: us.objects.PrivateBucket(), key: row.IncomingKey})
+
+	if row.Bucket != nil {
+		bucket := us.bucketName(*row.Bucket)
+		if row.StorageKey != nil {
+			toDelete = append(toDelete, object{bucket: bucket, key: *row.StorageKey})
+		}
+		if row.Variants != nil {
+			for _, k := range []string{row.Variants.Thumb, row.Variants.Medium, row.Variants.Full} {
+				if k == "" {
+					continue
+				}
+				toDelete = append(toDelete, object{bucket: bucket, key: k})
+			}
+		}
+	}
+
+	delCtx := context.WithoutCancel(ctx)
+	for _, o := range toDelete {
+		err := us.objects.Delete(delCtx, o.bucket, o.key)
+		if err != nil {
+			log.Warn("unable to delete obj", zap.String("bucket", o.bucket), zap.String("key", o.key), zap.Error(err))
+		}
+	}
+
+	return nil
 }
 
 func (us *UploadService) GetQuota(ctx context.Context, userID string) (dto.QuotaRow, error) {
