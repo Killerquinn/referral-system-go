@@ -68,6 +68,7 @@ func (uh *UploadHandler) InitUpload(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		status, msg := serviceErrorStatus(err)
 		responseReturn(w, status, dto.InitUploadResponse{Message: msg})
+		return
 	}
 
 	responseReturn(w, http.StatusCreated, dto.InitUploadResponse{Upload: uploadedItem, Target: presignedUpload, Message: "created successfully"})

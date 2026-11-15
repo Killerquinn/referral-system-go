@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -16,15 +17,17 @@ import (
 	userrepopackage "github.com/killerquinn/referral-system-go/internal/features/user/repo"
 	userservice "github.com/killerquinn/referral-system-go/internal/features/user/service"
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/http/rest"
+	"github.com/killerquinn/referral-system-go/internal/infrastructure/queue"
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/storage/r2"
 	"go.uber.org/zap"
 )
 
 type App struct {
 	RestServer *rest.App
+	Queue      *queue.Queue // background jobs: started / stopped in main
 }
 
-func New(logger *zap.Logger, pool *pgxpool.Pool, storage *r2.Client, port int, tokenTTL time.Duration, refreshTTL time.Duration, cfg *config.Config) *App {
+func New(logger *zap.Logger, pool *pgxpool.Pool, storage *r2.Client, port int, tokenTTL time.Duration, refreshTTL time.Duration, cfg *config.Config) (*App, error) {
 	const op = "New"
 
 	//AUTH INTERFACES
@@ -86,19 +89,26 @@ func New(logger *zap.Logger, pool *pgxpool.Pool, storage *r2.Client, port int, t
 
 	uploadrepo := uploadrepopackage.New(pool)
 
+	jobs, err := queue.New(logger, pool)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+
 	// storage must reach the service as an UNTYPED nil when R2 is disabled: a nil *r2.Client
 	// wrapped in the interface is != nil and the service's nil checks would pass.
-	// queue is nil until River is set up.
 	var uploadService *uploadservice.UploadService
 	if storage != nil {
-		uploadService = uploadservice.New(logger, uploadrepo, storage, nil)
+		uploadService = uploadservice.New(logger, uploadrepo, storage, jobs)
 	} else {
-		uploadService = uploadservice.New(logger, uploadrepo, nil, nil)
+		uploadService = uploadservice.New(logger, uploadrepo, nil, jobs)
 	}
+	// workers call back into the service (process / cleanup)
+	jobs.SetUploadProcessor(uploadService)
 
 	app := rest.NewApp(logger, cfg, authService, userService, referralService, postservice, uploadService)
 
 	return &App{
 		RestServer: app,
-	}
+		Queue:      jobs,
+	}, nil
 }

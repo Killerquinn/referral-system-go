@@ -157,3 +157,67 @@ func (r *Repository) EnsureQuota(ctx context.Context, userID string, defaultLimi
 
 	return quota, nil
 }
+
+func (r *Repository) DeleteStale(ctx context.Context, pendingBefore, failedBefore time.Time, limit int) ([]dto.UploadRow, error) {
+	const op = "internal/features/upload/repo DeleteStale"
+
+	rows, err := r.db.Query(ctx, DeleteStaleUploads, pendingBefore, failedBefore, limit)
+	if err != nil {
+		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+
+	// nothing to delete -> empty slice, no ErrNoRows
+	deleted, err := pgx.CollectRows(rows, pgx.RowToStructByName[dto.UploadRow])
+	if err != nil {
+		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+
+	return deleted, nil
+}
+
+func (r *Repository) MarkReady(ctx context.Context, p dto.MarkReadyParams) error {
+	const op = "internal/features/upload/repo MarkReady"
+
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("%s:%w", op, err)
+	}
+	defer tx.Rollback(ctx)
+
+	// 1. the row: only from processing (deleted / already handled -> 0 rows)
+	res, err := tx.Exec(ctx, UpdateUploadToReady,
+		p.ID, p.Bucket, p.StorageKey, p.Variants, p.MimeType,
+		p.SizeBytes, p.Width, p.Height, p.DurationMs, p.Blurhash,
+	)
+	if err != nil {
+		return fmt.Errorf("%s:%w", op, err)
+	}
+	if res.RowsAffected() == 0 {
+		return sharederrors.ErrUploadNotPending
+	}
+
+	// 2. the quota: limit is checked in the WHERE, so parallel uploads can't both squeeze in.
+	// 0 rows -> over the limit -> return without Commit: the deferred Rollback undoes step 1 too.
+	res, err = tx.Exec(ctx, IncrementQuotaUsed, p.OwnerID, p.SizeBytes)
+	if err != nil {
+		return fmt.Errorf("%s:%w", op, err)
+	}
+	if res.RowsAffected() == 0 {
+		return sharederrors.ErrStorageQuotaExceeded
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("%s:%w", op, err)
+	}
+	return nil
+}
+
+func (r *Repository) MarkFailed(ctx context.Context, uploadID, status, reason string) error {
+	const op = "internal/features/upload/repo MarkFailed"
+
+	// 0 rows is fine: the upload was deleted or already finished meanwhile
+	if _, err := r.db.Exec(ctx, UpdateUploadToFailed, uploadID, status, reason); err != nil {
+		return fmt.Errorf("%s:%w", op, err)
+	}
+	return nil
+}

@@ -68,6 +68,21 @@ type (
 		OriginalFilename    *string
 	}
 
+	// MarkReadyParams is what processing writes when the file is done.
+	MarkReadyParams struct {
+		ID         string
+		OwnerID    string
+		Bucket     string    // BucketPublic / BucketPrivate
+		StorageKey string    // the main file (images: the "full" variant)
+		Variants   *Variants // nil for video / audio
+		MimeType   string    // sniffed from the content
+		SizeBytes  int64     // what is counted in the quota: sum of all stored files
+		Width      *int
+		Height     *int
+		DurationMs *int
+		Blurhash   *string
+	}
+
 	QuotaRow struct {
 		LimitBytes int64 `db:"storage_limit_bytes"`
 		UsedBytes  int64 `db:"storage_used_bytes"`

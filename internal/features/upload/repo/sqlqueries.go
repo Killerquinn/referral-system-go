@@ -62,4 +62,43 @@ const (
 	UPDATE media_quotas
 	SET storage_used_bytes = GREATEST(storage_used_bytes - $2, 0), updated_at = NOW()
 	WHERE user_id = $1`
+
+	// $1 pending created before, $2 failed/rejected created before, $3 batch size.
+	// DELETE has no LIMIT in Postgres -> pick ids in a subquery. SKIP LOCKED: two server
+	// instances running cleanup at once take different rows instead of waiting on each other.
+	// Never matches 'ready' -> quota is never affected.
+	DeleteStaleUploads = `
+	DELETE FROM uploads
+	WHERE id IN (
+		SELECT id FROM uploads
+		WHERE (status = 'pending' AND created_at < $1)
+		   OR (status IN ('failed', 'rejected') AND created_at < $2)
+		ORDER BY created_at
+		LIMIT $3
+		FOR UPDATE SKIP LOCKED
+	)
+	RETURNING ` + uploadColumns
+
+	// $1 user_id, $2 bytes. Atomic limit check: two parallel uploads can't both squeeze in.
+	// No row returned -> over the limit (the row always exists: EnsureQuota ran at init).
+	IncrementQuotaUsed = `
+	UPDATE media_quotas
+	SET storage_used_bytes = storage_used_bytes + $2, updated_at = NOW()
+	WHERE user_id = $1 AND storage_used_bytes + $2 <= storage_limit_bytes`
+
+	// $1 id, $2 bucket, $3 storage_key, $4 variants (JSONB, nullable), $5 mime_type, $6 size_bytes,
+	// $7 width, $8 height, $9 duration_ms, $10 blurhash — status = 'ready', ready_at / updated_at = NOW()
+	// WHERE status = 'processing'
+	UpdateUploadToReady = `
+	UPDATE uploads
+	SET status = 'ready', bucket = $2, storage_key = $3, variants = $4, mime_type = $5,
+		size_bytes = $6, width = $7, height = $8, duration_ms = $9, blurhash = $10,
+		error = NULL, ready_at = NOW(), updated_at = NOW()
+	WHERE id = $1 AND status = 'processing'`
+
+	// $1 id, $2 status ('failed' / 'rejected'), $3 error — updated_at = NOW(), WHERE status = 'processing'
+	UpdateUploadToFailed = `
+	UPDATE uploads
+	SET status = $2, error = $3, updated_at = NOW()
+	WHERE id = $1 AND status = 'processing'`
 )

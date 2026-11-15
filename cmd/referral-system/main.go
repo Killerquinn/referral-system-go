@@ -11,6 +11,7 @@ import (
 	"github.com/killerquinn/referral-system-go/internal/config"
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/database"
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/http/rest/app"
+	"github.com/killerquinn/referral-system-go/internal/infrastructure/imaging"
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/storage/r2"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -29,7 +30,8 @@ func main() {
 	log.Info("Starting server...")
 	log.Info("logger and config loaded")
 
-	_, cancel := context.WithCancel(context.Background())
+	// cancelled on shutdown -> stops background jobs
+	appCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	//load postgres
 	postgres, err := database.NewPool(cfg)
@@ -64,12 +66,30 @@ func main() {
 
 	//start server
 
-	application := app.New(log, postgres.Pool, storage, cfg.Server.Port, cfg.JWT.TTL, cfg.Refresh.TTL, cfg)
+	// libvips for image processing (upload jobs)
+	if err := imaging.Startup(); err != nil {
+		log.Error("failed to start libvips", zap.Error(err))
+		os.Exit(1)
+	}
+	defer imaging.Shutdown()
+
+	application, err := app.New(log, postgres.Pool, storage, cfg.Server.Port, cfg.JWT.TTL, cfg.Refresh.TTL, cfg)
+	if err != nil {
+		log.Error("failed to build application", zap.Error(err))
+		os.Exit(1)
+	}
 	go func() {
 		if err := application.RestServer.Run(log); err != nil {
 			log.Fatal("server didn't start for some reason... : ", zap.Error(err))
 		}
 	}()
+
+	// background jobs (River): upload processing + periodic cleanup
+	if err := application.Queue.Start(appCtx); err != nil {
+		log.Error("failed to start job queue", zap.Error(err))
+		os.Exit(1)
+	}
+
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 	//graceful shutdown
@@ -83,6 +103,12 @@ func main() {
 	log.Info(fmt.Sprintf("application shutdowns on port %v, with syscall %v", cfg.Server.Port, siginfo.String()))
 
 	application.RestServer.Shutdown(log, shutdownCtx)
+
+	// let running jobs finish (until shutdownCtx expires), then cancel the rest
+	if err := application.Queue.Stop(shutdownCtx); err != nil {
+		log.Warn("job queue did not stop cleanly", zap.Error(err))
+	}
+	cancel()
 
 	log.Info("database will close just after closing main")
 
