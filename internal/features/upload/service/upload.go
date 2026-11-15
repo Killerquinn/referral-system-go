@@ -362,7 +362,7 @@ func (us *UploadService) GetUpload(ctx context.Context, userID, uploadID string)
 		if errors.Is(err, sharederrors.ErrUploadNotFound) {
 			return dto.UploadItem{}, err
 		}
-		log.Error("err", zap.Error(err))
+		log.Error("failed at GetUpload", zap.Error(err))
 
 		return dto.UploadItem{}, fmt.Errorf("%s:%w", op, err)
 	}
@@ -390,11 +390,36 @@ func (us *UploadService) DeleteUpload(ctx context.Context, userID, uploadID stri
 		zap.String("upload_id", uploadID),
 	)
 
+	if us.objects == nil {
+		return sharederrors.ErrStorageUnavailable
+	}
+
+	row, err := us.storage.DeleteUpload(ctx, uploadID, userID)
+	if err != nil {
+		if errors.Is(err, sharederrors.ErrUploadNotFound) {
+			return sharederrors.ErrUploadNotFound
+		}
+		log.Error("failed at DeleteUpload", zap.Error(err))
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
 	return sharederrors.ErrNotImplemented
 }
 
 func (us *UploadService) GetQuota(ctx context.Context, userID string) (dto.QuotaRow, error) {
 	const op = "internal/features/upload/service GetQuota"
-	// TODO: EnsureQuota(userID, defaultStorageLimit)
-	return dto.QuotaRow{}, sharederrors.ErrNotImplemented
+
+	log := us.log.With(
+		zap.String("op", op),
+		zap.String("user_id", userID),
+	)
+
+	quota, err := us.storage.EnsureQuota(ctx, userID, defaultStorageLimit)
+	if err != nil {
+		log.Error("failed at EnsureQuota", zap.Error(err))
+
+		return dto.QuotaRow{}, fmt.Errorf("%s:%w", op, err)
+	}
+
+	return quota, nil
 }
