@@ -32,25 +32,7 @@ func NewUploadHandler(us UploadService) *UploadHandler {
 
 /*
 Routes (rest/chi.go), inside the AuthMiddleware group
-(static "quota" wins over {uploadID} in chi):
-
-	r.Post("/api/v1/uploads", newUploadHandler.InitUpload)
-	r.Get("/api/v1/uploads/quota", newUploadHandler.GetQuota)
-	r.Post("/api/v1/uploads/{uploadID}/complete", newUploadHandler.CompleteUpload)
-	r.Get("/api/v1/uploads/{uploadID}", newUploadHandler.GetUpload)
-	r.Delete("/api/v1/uploads/{uploadID}", newUploadHandler.DeleteUpload)
-
 Init is a good candidate for a rate limit (presigned URLs are cheap to request, storage is not).
-
-Error -> status:
-	ErrUnsupportedMediaType  -> 415
-	ErrFileTooLarge          -> 413
-	ErrStorageQuotaExceeded  -> 403 (or 413)
-	ErrTooManyPendingUploads -> 429
-	ErrUploadNotFound        -> 404
-	ErrUploadNotPending      -> 409
-	ErrUploadIncomplete      -> 400 (frontend: "upload failed, try again")
-	ErrStorageUnavailable    -> 503
 */
 
 const maxInitBodyBytes = 4 << 10

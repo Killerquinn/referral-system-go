@@ -19,6 +19,8 @@ import (
 	postservice "github.com/killerquinn/referral-system-go/internal/features/post/service"
 	referralhttphandler "github.com/killerquinn/referral-system-go/internal/features/referral/http"
 	referralservice "github.com/killerquinn/referral-system-go/internal/features/referral/service"
+	uploadhttphandler "github.com/killerquinn/referral-system-go/internal/features/upload/http"
+	uploadservice "github.com/killerquinn/referral-system-go/internal/features/upload/service"
 	userhttphandler "github.com/killerquinn/referral-system-go/internal/features/user/http"
 	userservice "github.com/killerquinn/referral-system-go/internal/features/user/service"
 	localmdw "github.com/killerquinn/referral-system-go/internal/infrastructure/http/middleware"
@@ -32,7 +34,7 @@ type App struct {
 	port   string
 }
 
-func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *userservice.Uservice, referral *referralservice.RefService, ps *postservice.PostService) *App {
+func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *userservice.Uservice, referral *referralservice.RefService, ps *postservice.PostService, us *uploadservice.UploadService) *App {
 	r := chi.NewRouter()
 
 	log.Info("adding middleware")
@@ -64,6 +66,7 @@ func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *u
 	newUserHandler := userhttphandler.NewUserHandler(user)
 	newReferralHandler := referralhttphandler.NewRefferalHandler(referral)
 	newPostHandler := posthttphandler.NewPostHandler(ps)
+	newUploadHandler := uploadhttphandler.NewUploadHandler(us)
 
 	r.Group(func(r chi.Router) {
 		r.Use(localmdw.AuthMiddleware(cfg.JWT.Secret))
@@ -96,6 +99,12 @@ func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *u
 		r.Get("/api/v1/posts/{postID}", newPostHandler.GetPost)
 		r.Put("/api/v1/posts/{postID}", newPostHandler.UpdatePost)
 		r.Delete("/api/v1/posts/{postID}", newPostHandler.DeletePost)
+		//upload (static "quota" wins over {uploadID} in chi)
+		r.Post("/api/v1/uploads", newUploadHandler.InitUpload)
+		r.Get("/api/v1/uploads/quota", newUploadHandler.GetQuota)
+		r.Post("/api/v1/uploads/{uploadID}/complete", newUploadHandler.CompleteUpload)
+		r.Get("/api/v1/uploads/{uploadID}", newUploadHandler.GetUpload)
+		r.Delete("/api/v1/uploads/{uploadID}", newUploadHandler.DeleteUpload)
 	})
 
 	log.Info("setup server")

@@ -44,14 +44,16 @@ func main() {
 		}
 	}(postgres)
 
-	// object storage (Cloudflare R2). Not wired into features yet — uploads come next.
+	// object storage (Cloudflare R2). nil = disabled: upload endpoints answer 503.
 	storage, err := r2.New(cfg.R2)
 	if err != nil {
 		log.Warn("r2 storage disabled", zap.Error(err))
 	} else {
 		checkCtx, checkCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		if err := storage.CheckBuckets(checkCtx); err != nil {
-			log.Error("r2 bucket check failed", zap.Error(err))
+			// buckets missing / wrong credentials -> disable instead of failing on every upload
+			log.Error("r2 bucket check failed, storage disabled", zap.Error(err))
+			storage = nil
 		} else {
 			log.Info("r2 storage connected",
 				zap.String("public_bucket", storage.PublicBucket()),
@@ -62,7 +64,7 @@ func main() {
 
 	//start server
 
-	application := app.New(log, postgres.Pool, cfg.Server.Port, cfg.JWT.TTL, cfg.Refresh.TTL, cfg)
+	application := app.New(log, postgres.Pool, storage, cfg.Server.Port, cfg.JWT.TTL, cfg.Refresh.TTL, cfg)
 	go func() {
 		if err := application.RestServer.Run(log); err != nil {
 			log.Fatal("server didn't start for some reason... : ", zap.Error(err))

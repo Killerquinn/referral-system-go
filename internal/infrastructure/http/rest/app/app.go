@@ -11,9 +11,12 @@ import (
 	postservice "github.com/killerquinn/referral-system-go/internal/features/post/service"
 	referralrepopackage "github.com/killerquinn/referral-system-go/internal/features/referral/repo"
 	referralservice "github.com/killerquinn/referral-system-go/internal/features/referral/service"
+	uploadrepopackage "github.com/killerquinn/referral-system-go/internal/features/upload/repo"
+	uploadservice "github.com/killerquinn/referral-system-go/internal/features/upload/service"
 	userrepopackage "github.com/killerquinn/referral-system-go/internal/features/user/repo"
 	userservice "github.com/killerquinn/referral-system-go/internal/features/user/service"
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/http/rest"
+	"github.com/killerquinn/referral-system-go/internal/infrastructure/storage/r2"
 	"go.uber.org/zap"
 )
 
@@ -21,7 +24,7 @@ type App struct {
 	RestServer *rest.App
 }
 
-func New(logger *zap.Logger, pool *pgxpool.Pool, port int, tokenTTL time.Duration, refreshTTL time.Duration, cfg *config.Config) *App {
+func New(logger *zap.Logger, pool *pgxpool.Pool, storage *r2.Client, port int, tokenTTL time.Duration, refreshTTL time.Duration, cfg *config.Config) *App {
 	const op = "New"
 
 	//AUTH INTERFACES
@@ -77,7 +80,23 @@ func New(logger *zap.Logger, pool *pgxpool.Pool, port int, tokenTTL time.Duratio
 		postrepo,
 	)
 
-	app := rest.NewApp(logger, cfg, authService, userService, referralService, postservice)
+	//UPLOAD INTERFACES
+
+	logger.Info("start loading upload interfaces")
+
+	uploadrepo := uploadrepopackage.New(pool)
+
+	// storage must reach the service as an UNTYPED nil when R2 is disabled: a nil *r2.Client
+	// wrapped in the interface is != nil and the service's nil checks would pass.
+	// queue is nil until River is set up.
+	var uploadService *uploadservice.UploadService
+	if storage != nil {
+		uploadService = uploadservice.New(logger, uploadrepo, storage, nil)
+	} else {
+		uploadService = uploadservice.New(logger, uploadrepo, nil, nil)
+	}
+
+	app := rest.NewApp(logger, cfg, authService, userService, referralService, postservice, uploadService)
 
 	return &App{
 		RestServer: app,
