@@ -350,7 +350,6 @@ func (us *UploadService) CompleteUpload(ctx context.Context, userID, uploadID st
 
 func (us *UploadService) GetUpload(ctx context.Context, userID, uploadID string) (dto.UploadItem, error) {
 	const op = "internal/features/upload/service GetUpload"
-	// TODO: not found OR not the owner -> sharederrors.ErrUploadNotFound
 
 	log := us.log.With(
 		zap.String("op", op),
