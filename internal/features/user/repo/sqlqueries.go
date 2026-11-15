@@ -117,8 +117,12 @@ var (
 	// $1 user_id, $2 upload_id (NULL = remove the avatar).
 	// The upload must be the user's own, ready, an avatar, in the public bucket — checked in the same
 	// statement, so there is no gap between "check" and "set". No row back -> invalid upload.
+	// Returns the PREVIOUS avatar id first (CTEs see the row as it was before the UPDATE),
+	// so the service can delete the old file.
 	SetAvatar = `
-	WITH upd AS (
+	WITH old AS (
+		SELECT avatar_upload_id AS old_id FROM users WHERE id = $1
+	), upd AS (
 		UPDATE users
 		SET avatar_upload_id = $2
 		WHERE id = $1
@@ -128,7 +132,7 @@ var (
 		  ))
 		RETURNING avatar_upload_id
 	)
-	SELECT ` + media.JoinColumns("av") + `
+	SELECT (SELECT old_id FROM old), ` + media.JoinColumns("av") + `
 	FROM upd
 	LEFT JOIN uploads av ON ` + media.JoinOn("av", "upd.avatar_upload_id") + `
 	`

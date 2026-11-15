@@ -61,6 +61,28 @@ func New(logger *zap.Logger, pool *pgxpool.Pool, storage *r2.Client, port int, t
 		authstorage, // session interface
 	)
 
+	//UPLOAD INTERFACES
+
+	logger.Info("start loading upload interfaces")
+
+	uploadrepo := uploadrepopackage.New(pool)
+
+	jobs, err := queue.New(logger, pool)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+
+	// storage must reach the service as an UNTYPED nil when R2 is disabled: a nil *r2.Client
+	// wrapped in the interface is != nil and the service's nil checks would pass.
+	var uploadService *uploadservice.UploadService
+	if storage != nil {
+		uploadService = uploadservice.New(logger, uploadrepo, storage, jobs)
+	} else {
+		uploadService = uploadservice.New(logger, uploadrepo, nil, jobs)
+	}
+	// workers call back into the service (process / cleanup)
+	jobs.SetUploadProcessor(uploadService)
+
 	//USER INTERFACES
 
 	logger.Info("start loading user interfaces")
@@ -75,6 +97,7 @@ func New(logger *zap.Logger, pool *pgxpool.Pool, storage *r2.Client, port int, t
 		userqueries,
 		userqueries, // avatars
 		urls,
+		uploadService, // deletes the previous avatar file when it's replaced
 	)
 
 	//add referral feature there
@@ -108,29 +131,10 @@ func New(logger *zap.Logger, pool *pgxpool.Pool, storage *r2.Client, port int, t
 		pageSlugCooldown,
 		pagerepo,
 		urls,
+		uploadService,      // deletes the previous background / music file when it's replaced
+		[]byte(hmacsecret), // keys the daily visitor hashes of the view counter
 	)
-
-	//UPLOAD INTERFACES
-
-	logger.Info("start loading upload interfaces")
-
-	uploadrepo := uploadrepopackage.New(pool)
-
-	jobs, err := queue.New(logger, pool)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", op, err)
-	}
-
-	// storage must reach the service as an UNTYPED nil when R2 is disabled: a nil *r2.Client
-	// wrapped in the interface is != nil and the service's nil checks would pass.
-	var uploadService *uploadservice.UploadService
-	if storage != nil {
-		uploadService = uploadservice.New(logger, uploadrepo, storage, jobs)
-	} else {
-		uploadService = uploadservice.New(logger, uploadrepo, nil, jobs)
-	}
-	// workers call back into the service (process / cleanup)
-	jobs.SetUploadProcessor(uploadService)
+	jobs.SetViewsCleaner(pageService)
 
 	app := rest.NewApp(logger, cfg, authService, userService, referralService, postservice, uploadService, pageService)
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -183,4 +184,67 @@ func (r *Repository) GetViewerContext(ctx context.Context, viewerID, authorID st
 		return dto.ViewerContext{}, fmt.Errorf("%s:%w", op, err)
 	}
 	return vc, nil
+}
+
+// ===== views =====
+
+func (r *Repository) GetPageForView(ctx context.Context, slug string) (dto.PageForView, error) {
+	const op = "internal/features/page/repo GetPageForView"
+
+	var p dto.PageForView
+	if err := r.db.QueryRow(ctx, SelectPageForView, slug).Scan(&p.UserID, &p.IsPublished, &p.AuthorBlocked); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return dto.PageForView{}, sharederrors.ErrPageNotFound
+		}
+		return dto.PageForView{}, fmt.Errorf("%s:%w", op, err)
+	}
+	return p, nil
+}
+
+// RecordView counts the visitor once per day: the dedupe row and the +1 go in one transaction.
+// Returns false if this visitor was already counted today.
+func (r *Repository) RecordView(ctx context.Context, pageUserID string, day time.Time, visitorHash []byte) (bool, error) {
+	const op = "internal/features/page/repo RecordView"
+
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return false, fmt.Errorf("%s:%w", op, err)
+	}
+	defer tx.Rollback(ctx)
+
+	res, err := tx.Exec(ctx, InsertViewVisitor, pageUserID, day, visitorHash)
+	if err != nil {
+		return false, fmt.Errorf("%s:%w", op, err)
+	}
+	if res.RowsAffected() == 0 {
+		return false, nil // seen today
+	}
+
+	if _, err := tx.Exec(ctx, IncrementDailyViews, pageUserID, day); err != nil {
+		return false, fmt.Errorf("%s:%w", op, err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, fmt.Errorf("%s:%w", op, err)
+	}
+	return true, nil
+}
+
+func (r *Repository) GetViewStats(ctx context.Context, pageUserID string, today time.Time) (dto.PageViews, error) {
+	const op = "internal/features/page/repo GetViewStats"
+
+	var v dto.PageViews
+	if err := r.db.QueryRow(ctx, SelectViewStats, pageUserID, today).Scan(&v.Total, &v.Today); err != nil {
+		return dto.PageViews{}, fmt.Errorf("%s:%w", op, err)
+	}
+	return v, nil
+}
+
+func (r *Repository) DeleteViewVisitorsBefore(ctx context.Context, day time.Time) (int, error) {
+	const op = "internal/features/page/repo DeleteViewVisitorsBefore"
+
+	res, err := r.db.Exec(ctx, DeleteOldViewVisitors, day)
+	if err != nil {
+		return 0, fmt.Errorf("%s:%w", op, err)
+	}
+	return int(res.RowsAffected()), nil
 }

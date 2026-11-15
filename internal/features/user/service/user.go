@@ -22,6 +22,7 @@ type Uservice struct {
 	searchOptions  searchOptions
 	avatars        avatarOptions
 	urls           media.URLBuilder // nil when R2 is disabled -> no avatar URLs
+	uploads        uploadDeleter
 }
 
 type credentialsChange interface {
@@ -46,7 +47,13 @@ type searchOptions interface {
 
 type avatarOptions interface {
 	// ErrInvalidMediaAttachment: not the user's ready avatar upload
-	SetAvatar(ctx context.Context, userID string, uploadID *string) (media.Row, error)
+	// returns the previous avatar's upload id
+	SetAvatar(ctx context.Context, userID string, uploadID *string) (*string, media.Row, error)
+}
+
+// uploadDeleter removes an upload completely (row, files in R2, quota). *uploadservice.UploadService.
+type uploadDeleter interface {
+	DeleteUpload(ctx context.Context, userID, uploadID string) error
 }
 
 func New(
@@ -57,6 +64,7 @@ func New(
 	searchOptions searchOptions,
 	avatars avatarOptions,
 	urls media.URLBuilder,
+	uploads uploadDeleter,
 ) *Uservice {
 	return &Uservice{
 		log:            log,
@@ -66,6 +74,7 @@ func New(
 		searchOptions:  searchOptions,
 		avatars:        avatars,
 		urls:           urls,
+		uploads:        uploads,
 	}
 }
 
@@ -307,13 +316,20 @@ func (u *Uservice) SetAvatar(ctx context.Context, userID string, uploadID *strin
 		}
 	}
 
-	row, err := u.avatars.SetAvatar(ctx, userID, uploadID)
+	previous, row, err := u.avatars.SetAvatar(ctx, userID, uploadID)
 	if err != nil {
 		if errors.Is(err, sharederrors.ErrInvalidMediaAttachment) {
 			return nil, err
 		}
 		u.log.Error("set avatar failed", zap.String("op", op), zap.String("user_id", userID), zap.Error(err))
 		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+
+	// the old file isn't used anywhere else (avatar uploads are only for the avatar) -> free the space
+	if previous != nil && (uploadID == nil || *previous != *uploadID) {
+		if err := u.uploads.DeleteUpload(context.WithoutCancel(ctx), userID, *previous); err != nil {
+			u.log.Warn("unable to delete previous avatar", zap.String("upload_id", *previous), zap.Error(err))
+		}
 	}
 
 	return media.Build(u.urls, row), nil

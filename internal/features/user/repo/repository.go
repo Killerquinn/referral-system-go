@@ -239,17 +239,19 @@ func (r *Repository) Self(ctx context.Context, userID string) (item dto.SelfUser
 	return item, err
 }
 
-// SetAvatar attaches (uploadID) or removes (nil) the avatar and returns the new avatar's upload columns.
+// SetAvatar attaches (uploadID) or removes (nil) the avatar. Returns the previous avatar's upload id
+// (nil if there was none) and the new avatar's upload columns.
 // sharederrors.ErrInvalidMediaAttachment if the upload isn't the user's ready, public avatar.
-func (r *Repository) SetAvatar(ctx context.Context, userID string, uploadID *string) (media.Row, error) {
+func (r *Repository) SetAvatar(ctx context.Context, userID string, uploadID *string) (*string, media.Row, error) {
 	const op = "internal/features/user/repo SetAvatar"
 
+	var previous *string
 	var row media.Row
-	if err := r.db.QueryRow(ctx, SetAvatar, userID, uploadID).Scan(row.Targets()...); err != nil {
+	if err := r.db.QueryRow(ctx, SetAvatar, userID, uploadID).Scan(append([]any{&previous}, row.Targets()...)...); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return media.Row{}, sharederrors.ErrInvalidMediaAttachment
+			return nil, media.Row{}, sharederrors.ErrInvalidMediaAttachment
 		}
-		return media.Row{}, fmt.Errorf("%s:%w", op, err)
+		return nil, media.Row{}, fmt.Errorf("%s:%w", op, err)
 	}
-	return row, nil
+	return previous, row, nil
 }

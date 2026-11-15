@@ -87,4 +87,34 @@ var (
 		(v.referred_by_id IS NOT NULL AND v.referred_by_id <> $2) AS has_other_referrer
 	FROM users v
 	WHERE v.id = $1`
+
+	// ===== views =====
+
+	// $1 slug
+	SelectPageForView = `
+	SELECT p.user_id, p.is_published, COALESCE(u.is_blocked, FALSE)
+	FROM profile_pages p
+	JOIN users u ON u.id = p.user_id
+	WHERE p.slug = $1`
+
+	// $1 page_user_id, $2 day, $3 visitor_hash. 0 rows = already counted today.
+	InsertViewVisitor = `
+	INSERT INTO page_view_visitors (page_user_id, day, visitor_hash)
+	VALUES ($1, $2, $3)
+	ON CONFLICT DO NOTHING`
+
+	// $1 page_user_id, $2 day
+	IncrementDailyViews = `
+	INSERT INTO page_view_daily (page_user_id, day, views)
+	VALUES ($1, $2, 1)
+	ON CONFLICT (page_user_id, day) DO UPDATE SET views = page_view_daily.views + 1`
+
+	// $1 page_user_id, $2 today
+	SelectViewStats = `
+	SELECT COALESCE(SUM(views), 0), COALESCE(SUM(views) FILTER (WHERE day = $2), 0)
+	FROM page_view_daily
+	WHERE page_user_id = $1`
+
+	// $1 day — everything before it
+	DeleteOldViewVisitors = `DELETE FROM page_view_visitors WHERE day < $1`
 )

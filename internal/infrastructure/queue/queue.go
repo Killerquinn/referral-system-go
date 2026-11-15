@@ -3,6 +3,7 @@
 // Jobs:
 //   - process_upload   — enqueued by UploadService.CompleteUpload, runs UploadService.ProcessUpload
 //   - cleanup_uploads  — periodic (every 10m + on start), runs UploadService.CleanupStale
+//   - cleanup_page_views — periodic (every 6h + on start), runs PageService.CleanupViewVisitors
 //
 // Retries: a job whose Work returns an error is retried with backoff up to MaxAttempts,
 // then it is discarded. Return nil for permanent failures you already handled (e.g. a broken file
@@ -30,7 +31,13 @@ type UploadProcessor interface {
 	CleanupStale(ctx context.Context) (int, error)
 }
 
+// ViewsCleaner drops old page-view dedupe rows. Implemented by *pageservice.PageService.
+type ViewsCleaner interface {
+	CleanupViewVisitors(ctx context.Context) (int, error)
+}
+
 const (
+	viewsCleanupInterval     = 6 * time.Hour
 	processUploadMaxAttempts = 5
 	processUploadTimeout     = 3 * time.Minute
 	cleanupInterval          = 10 * time.Minute
@@ -95,11 +102,34 @@ func (w *cleanupUploadsWorker) Work(ctx context.Context, _ *river.Job[CleanupUpl
 	return nil
 }
 
+// ===== cleanup_page_views =====
+
+type CleanupPageViewsArgs struct{}
+
+func (CleanupPageViewsArgs) Kind() string { return "cleanup_page_views" }
+
+type cleanupPageViewsWorker struct {
+	river.WorkerDefaults[CleanupPageViewsArgs]
+	q *Queue
+}
+
+func (w *cleanupPageViewsWorker) Work(ctx context.Context, _ *river.Job[CleanupPageViewsArgs]) error {
+	n, err := w.q.views.CleanupViewVisitors(ctx)
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		w.q.log.Info("page view cleanup done", zap.Int("deleted", n))
+	}
+	return nil
+}
+
 // ===== client =====
 
 type Queue struct {
 	client    *river.Client[pgx.Tx]
 	processor UploadProcessor
+	views     ViewsCleaner
 	log       *zap.Logger
 }
 
@@ -111,6 +141,7 @@ func New(log *zap.Logger, pool *pgxpool.Pool) (*Queue, error) {
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &processUploadWorker{q: q})
 	river.AddWorker(workers, &cleanupUploadsWorker{q: q, log: q.log})
+	river.AddWorker(workers, &cleanupPageViewsWorker{q: q})
 
 	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
 		Queues:  map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: maxWorkers}},
@@ -119,6 +150,11 @@ func New(log *zap.Logger, pool *pgxpool.Pool) (*Queue, error) {
 			river.NewPeriodicJob(
 				river.PeriodicInterval(cleanupInterval),
 				func() (river.JobArgs, *river.InsertOpts) { return CleanupUploadsArgs{}, nil },
+				&river.PeriodicJobOpts{RunOnStart: true},
+			),
+			river.NewPeriodicJob(
+				river.PeriodicInterval(viewsCleanupInterval),
+				func() (river.JobArgs, *river.InsertOpts) { return CleanupPageViewsArgs{}, nil },
 				&river.PeriodicJobOpts{RunOnStart: true},
 			),
 		},
@@ -134,10 +170,12 @@ func New(log *zap.Logger, pool *pgxpool.Pool) (*Queue, error) {
 
 func (q *Queue) SetUploadProcessor(p UploadProcessor) { q.processor = p }
 
+func (q *Queue) SetViewsCleaner(v ViewsCleaner) { q.views = v }
+
 // Start begins fetching and working jobs. Returns immediately.
 func (q *Queue) Start(ctx context.Context) error {
-	if q.processor == nil {
-		return fmt.Errorf("queue: upload processor is not set")
+	if q.processor == nil || q.views == nil {
+		return fmt.Errorf("queue: upload processor / views cleaner is not set")
 	}
 	return q.client.Start(ctx)
 }

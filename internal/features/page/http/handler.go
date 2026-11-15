@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/killerquinn/referral-system-go/internal/features/page/dto"
+	localmdw "github.com/killerquinn/referral-system-go/internal/infrastructure/http/middleware"
 	httpfeatures "github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/http-features"
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/jwtcontext"
 	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
@@ -21,6 +22,7 @@ type PageService interface {
 	UpdateMyPage(ctx context.Context, userID string, req dto.UpdatePageRequest) (dto.PageItem, error)
 	ChangeSlug(ctx context.Context, userID string, req dto.ChangeSlugRequest) error
 	CheckSlug(ctx context.Context, slug string) (dto.SlugAvailabilityResponse, error)
+	RecordView(ctx context.Context, slug, viewerID, ip, userAgent string) error
 }
 
 type PageHandler struct {
@@ -182,6 +184,20 @@ func (ph *PageHandler) CheckSlug(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	responseReturn(w, http.StatusOK, res)
+}
+
+// RecordView: POST /api/v1/pages/{slug}/view, sent by the frontend once the page is on screen.
+// Token optional. Always 204 for a known page (counted or not), so it reveals nothing.
+func (ph *PageHandler) RecordView(w http.ResponseWriter, r *http.Request) {
+	viewerID, _ := jwtcontext.GetUserID(r.Context())
+
+	err := ph.pService.RecordView(r.Context(), chi.URLParam(r, "slug"), viewerID, localmdw.ClientIP(r), r.UserAgent())
+	if err != nil {
+		status, msg := pageErrorStatus(err)
+		responseReturn(w, status, dto.MessageResponse{Message: msg})
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func responseReturn(w http.ResponseWriter, status int, resp any, headers ...httpfeatures.Header) {

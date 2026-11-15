@@ -67,6 +67,21 @@ type (
 		Music              *media.File `json:"music,omitempty"`
 
 		Media PageMediaRows `json:"-"` // filled by the repo, turned into the files above by the service
+
+		Views *PageViews `json:"views,omitempty"` // owner only (GetMyPage)
+	}
+
+	// PageViews are unique visitors: one per visitor per day.
+	PageViews struct {
+		Total int `json:"total"`
+		Today int `json:"today"`
+	}
+
+	// PageForView is the little the view counter needs about a page.
+	PageForView struct {
+		UserID        string
+		IsPublished   bool
+		AuthorBlocked bool
 	}
 
 	// PageMediaRows are the joined uploads columns for the files a page shows.
@@ -116,6 +131,7 @@ type (
 
 		// block data, nil when the block is disabled
 		ReferralCount *int          `json:"referral_count,omitempty"` // number only, never who
+		ViewCount     *int          `json:"view_count,omitempty"`     // unique visitors, all time
 		RecentPosts   []PostPreview `json:"recent_posts,omitempty"`   // titles + dates only
 
 		Viewer *ViewerContext `json:"viewer,omitempty"`

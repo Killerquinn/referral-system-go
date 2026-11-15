@@ -70,11 +70,14 @@ func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *u
 	newPostHandler := posthttphandler.NewPostHandler(ps)
 	newUploadHandler := uploadhttphandler.NewUploadHandler(us)
 	newPageHandler := pagehttphandler.NewPageHandler(pgs)
+	viewLimiter := localmdw.NewRateLimiter(rate.Every(3*time.Second), 20, 10*time.Minute)
 
 	// public: token optional, never 401 (anonymous visitors see published pages)
 	r.Group(func(r chi.Router) {
 		r.Use(localmdw.OptionalAuthMiddleware(cfg.JWT.Secret))
 		r.Get("/api/v1/pages/{slug}", newPageHandler.GetPublicPage)
+		// dedupe makes repeats harmless; the limit stops one IP from inflating views by faking user agents
+		r.With(viewLimiter.ByIP).Post("/api/v1/pages/{slug}/view", newPageHandler.RecordView)
 	})
 
 	r.Group(func(r chi.Router) {

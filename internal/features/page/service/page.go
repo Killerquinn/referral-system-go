@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"net/url"
@@ -33,6 +35,12 @@ type pageStorage interface {
 	GetRecentPostPreviews(ctx context.Context, authorID string, limit int) ([]dto.PostPreview, error)
 	// sharederrors.ErrUserNotFound -> the viewer was deleted, treat as anonymous
 	GetViewerContext(ctx context.Context, viewerID, authorID string) (dto.ViewerContext, error)
+
+	// views
+	GetPageForView(ctx context.Context, slug string) (dto.PageForView, error)
+	RecordView(ctx context.Context, pageUserID string, day time.Time, visitorHash []byte) (bool, error)
+	GetViewStats(ctx context.Context, pageUserID string, today time.Time) (dto.PageViews, error)
+	DeleteViewVisitorsBefore(ctx context.Context, day time.Time) (int, error)
 }
 
 type PageService struct {
@@ -41,16 +49,30 @@ type PageService struct {
 	slugCooldown time.Duration
 	storage      pageStorage
 	urls         media.URLBuilder // nil when R2 is disabled -> pages render without files
+	uploads      uploadDeleter
+	viewSecret   []byte // keys the visitor hashes, so they can't be recomputed from a DB dump
 }
 
-func New(log *zap.Logger, baseurl string, slugCooldown time.Duration, storage pageStorage, urls media.URLBuilder) *PageService {
+// uploadDeleter removes an upload completely (row, files in R2, quota). *uploadservice.UploadService.
+type uploadDeleter interface {
+	DeleteUpload(ctx context.Context, userID, uploadID string) error
+}
+
+func New(log *zap.Logger, baseurl string, slugCooldown time.Duration, storage pageStorage, urls media.URLBuilder, uploads uploadDeleter, viewSecret []byte) *PageService {
 	return &PageService{
 		log:          log,
 		baseurl:      strings.TrimRight(baseurl, "/"),
 		slugCooldown: slugCooldown,
 		storage:      storage,
 		urls:         urls,
+		uploads:      uploads,
+		viewSecret:   viewSecret,
 	}
+}
+
+// replaced reports whether an attachment change (nil = unchanged, "" = detach) drops the previous upload.
+func replaced(previous, next *string) bool {
+	return next != nil && previous != nil && *previous != *next
 }
 
 // ===== allowed values for settings (single source of truth, the frontend mirrors them in src/api/pages.ts) =====
@@ -62,7 +84,7 @@ var (
 	allowedFonts           = map[string]struct{}{"inter": {}, "jetbrains_mono": {}, "space_grotesk": {}, "playfair": {}}
 	allowedLinkTypes       = map[string]struct{}{"telegram": {}, "discord": {}, "youtube": {}, "twitch": {}, "tiktok": {}, "instagram": {}, "github": {}, "website": {}}
 	// later: "tiers" (after the tier feature), "giveaway" (after giveaways get an API)
-	allowedBlocks = map[string]struct{}{"referral_button": {}, "referral_counter": {}, "recent_posts": {}}
+	allowedBlocks = map[string]struct{}{"referral_button": {}, "referral_counter": {}, "view_counter": {}, "recent_posts": {}}
 
 	// slugs that clash with frontend/backend routes or look official
 	reservedSlugs = map[string]struct{}{
@@ -102,6 +124,7 @@ func defaultSettings() dto.PageSettings {
 		Blocks: []dto.Block{
 			{Type: "referral_button", Enabled: true},
 			{Type: "referral_counter", Enabled: true},
+			{Type: "view_counter", Enabled: true},
 			{Type: "recent_posts", Enabled: false},
 		},
 	}
@@ -294,6 +317,15 @@ func (ps *PageService) GetPublicPage(ctx context.Context, viewerID, slug string)
 		page.ReferralCount = &n
 	}
 
+	if blockEnabled(item.Settings, "view_counter") {
+		v, err := ps.storage.GetViewStats(ctx, row.UserID, today())
+		if err != nil {
+			log.Error("view stats failed", zap.Error(err))
+			return nil, fmt.Errorf("%s:%w", op, err)
+		}
+		page.ViewCount = &v.Total
+	}
+
 	if blockEnabled(item.Settings, "recent_posts") {
 		posts, err := ps.storage.GetRecentPostPreviews(ctx, row.UserID, recentPostsOnPage)
 		if err != nil {
@@ -333,6 +365,15 @@ func (ps *PageService) GetMyPage(ctx context.Context, userID string) (dto.PageIt
 		ps.log.Error("get my page failed", zap.String("op", op), zap.String("user_id", userID), zap.Error(err))
 		return dto.PageItem{}, fmt.Errorf("%s:%w", op, err)
 	}
+
+	// the owner always sees the numbers, whether or not the counter is shown on the page
+	views, err := ps.storage.GetViewStats(ctx, userID, today())
+	if err != nil {
+		ps.log.Error("view stats failed", zap.String("op", op), zap.String("user_id", userID), zap.Error(err))
+		return dto.PageItem{}, fmt.Errorf("%s:%w", op, err)
+	}
+	p.Views = &views
+
 	return ps.withMedia(p), nil
 }
 
@@ -422,6 +463,20 @@ func (ps *PageService) UpdateMyPage(ctx context.Context, userID string, req dto.
 		}
 	}
 
+	// remember the current files: once replaced / detached, they are deleted
+	var before dto.PageItem
+	if req.BackgroundUploadID != nil || req.MusicUploadID != nil {
+		cur, err := ps.storage.GetPageByUserID(ctx, userID)
+		if err != nil {
+			if errors.Is(err, sharederrors.ErrPageNotFound) {
+				return dto.PageItem{}, err
+			}
+			log.Error("get page failed", zap.Error(err))
+			return dto.PageItem{}, fmt.Errorf("%s:%w", op, err)
+		}
+		before = cur
+	}
+
 	p, err := ps.storage.UpdatePage(ctx, userID, req.DisplayName, req.Bio, req.Settings, req.IsPublished,
 		req.BackgroundUploadID, req.MusicUploadID)
 	if err != nil {
@@ -431,6 +486,20 @@ func (ps *PageService) UpdateMyPage(ctx context.Context, userID string, req dto.
 		log.Error("update page failed", zap.Error(err))
 		return dto.PageItem{}, fmt.Errorf("%s:%w", op, err)
 	}
+
+	// page_background / page_music uploads belong to this page only -> free the space
+	delCtx := context.WithoutCancel(ctx)
+	for _, c := range []struct{ previous, next *string }{
+		{before.BackgroundUploadID, req.BackgroundUploadID},
+		{before.MusicUploadID, req.MusicUploadID},
+	} {
+		if replaced(c.previous, c.next) {
+			if err := ps.uploads.DeleteUpload(delCtx, userID, *c.previous); err != nil {
+				log.Warn("unable to delete previous page file", zap.String("upload_id", *c.previous), zap.Error(err))
+			}
+		}
+	}
+
 	return ps.withMedia(p), nil
 }
 
@@ -482,4 +551,69 @@ func (ps *PageService) CheckSlug(ctx context.Context, slug string) (dto.SlugAvai
 		return dto.SlugAvailabilityResponse{Slug: slug, Available: false, Message: sharederrors.ErrSlugTaken.Error()}, nil
 	}
 	return dto.SlugAvailabilityResponse{Slug: slug, Available: true, Message: "available"}, nil
+}
+
+// ===== views =====
+
+// non-browsers and link previews (Telegram, Discord, ...) — they don't open pages for a person
+var botUA = regexp.MustCompile(`(?i)bot|crawl|spider|slurp|preview|facebookexternalhit|embedly|whatsapp|skype|curl|wget|python|go-http-client|okhttp|headless|lighthouse`)
+
+// today is the counting day (UTC, so every server instance agrees).
+func today() time.Time {
+	y, m, d := time.Now().UTC().Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+}
+
+// visitorHash identifies a visitor for one day only. The day is part of the HMAC input, so
+// tomorrow's hash for the same person is unrelated, and without viewSecret it can't be recomputed.
+// The IP itself is never stored.
+func (ps *PageService) visitorHash(day time.Time, viewerID, ip, userAgent string) []byte {
+	key := "anon|" + ip + "|" + userAgent
+	if viewerID != "" {
+		key = "user|" + viewerID // the same person on phone and laptop counts once
+	}
+	mac := hmac.New(sha256.New, ps.viewSecret)
+	mac.Write([]byte("page-view|" + day.Format(time.DateOnly) + "|" + key))
+	return mac.Sum(nil)[:16]
+}
+
+// RecordView counts a visit: once per visitor per day, not the owner, not bots, only published pages.
+// Called by the frontend after the page is actually shown (bots that don't run JS never get here).
+func (ps *PageService) RecordView(ctx context.Context, slug, viewerID, ip, userAgent string) error {
+	const op = "internal/features/page/service RecordView"
+
+	if userAgent == "" || botUA.MatchString(userAgent) {
+		return nil
+	}
+	slug = normalizeSlug(slug)
+	if !slugRe.MatchString(slug) {
+		return sharederrors.ErrPageNotFound
+	}
+
+	p, err := ps.storage.GetPageForView(ctx, slug)
+	if err != nil {
+		if errors.Is(err, sharederrors.ErrPageNotFound) {
+			return err
+		}
+		return fmt.Errorf("%s:%w", op, err)
+	}
+	if !p.IsPublished || p.AuthorBlocked {
+		return sharederrors.ErrPageNotFound
+	}
+	if viewerID == p.UserID {
+		return nil // the owner checking their own page
+	}
+
+	day := today()
+	if _, err := ps.storage.RecordView(ctx, p.UserID, day, ps.visitorHash(day, viewerID, ip, userAgent)); err != nil {
+		ps.log.Error("record view failed", zap.String("op", op), zap.String("slug", slug), zap.Error(err))
+		return fmt.Errorf("%s:%w", op, err)
+	}
+	return nil
+}
+
+// CleanupViewVisitors drops dedupe rows of past days (run by the queue). Yesterday is kept so a
+// visit right around midnight UTC isn't counted twice by a lagging clock.
+func (ps *PageService) CleanupViewVisitors(ctx context.Context) (int, error) {
+	return ps.storage.DeleteViewVisitorsBefore(ctx, today().AddDate(0, 0, -1))
 }
