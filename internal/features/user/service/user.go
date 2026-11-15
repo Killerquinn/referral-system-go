@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/killerquinn/referral-system-go/internal/features/user/dto"
+	"github.com/killerquinn/referral-system-go/internal/shared/media"
 	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
@@ -19,6 +20,8 @@ type Uservice struct {
 	refOpts        referralOptions
 	accountOptions accountOptions
 	searchOptions  searchOptions
+	avatars        avatarOptions
+	urls           media.URLBuilder // nil when R2 is disabled -> no avatar URLs
 }
 
 type credentialsChange interface {
@@ -41,12 +44,19 @@ type searchOptions interface {
 	Self(ctx context.Context, userID string) (dto.SelfUserItems, error)
 }
 
+type avatarOptions interface {
+	// ErrInvalidMediaAttachment: not the user's ready avatar upload
+	SetAvatar(ctx context.Context, userID string, uploadID *string) (media.Row, error)
+}
+
 func New(
 	log *zap.Logger,
 	changeCreds credentialsChange,
 	referralOptions referralOptions,
 	accountOptions accountOptions,
 	searchOptions searchOptions,
+	avatars avatarOptions,
+	urls media.URLBuilder,
 ) *Uservice {
 	return &Uservice{
 		log:            log,
@@ -54,6 +64,8 @@ func New(
 		refOpts:        referralOptions,
 		accountOptions: accountOptions,
 		searchOptions:  searchOptions,
+		avatars:        avatars,
+		urls:           urls,
 	}
 }
 
@@ -243,6 +255,7 @@ func (u *Uservice) FindUserByUsername(ctx context.Context, callerUserID string, 
 	if userItems.IsBlocked {
 		return dto.UserByUsernameResponse{}, sharederrors.ErrUserIsBanned
 	}
+	userItems.Avatar = media.Build(u.urls, userItems.AvatarRow)
 
 	return dto.UserByUsernameResponse{User: userItems, Message: "user successfully found"}, nil
 }
@@ -264,6 +277,8 @@ func (u *Uservice) GetSelf(ctx context.Context, userID string) (*dto.SelfUser, e
 		return &dto.SelfUser{Message: "error occured"}, fmt.Errorf("%s:%w", op, err)
 	}
 
+	userItems.Avatar = media.Build(u.urls, userItems.AvatarRow)
+
 	return &dto.SelfUser{User: userItems, Message: "user successfully found"}, err
 }
 
@@ -280,4 +295,26 @@ func isOlderThenOneMonth(timestamp *time.Time) (bool, time.Duration) {
 	}
 
 	return true, 0
+}
+
+// SetAvatar attaches an uploaded avatar (uploadID) or removes it (nil). Returns the new avatar (nil if removed).
+func (u *Uservice) SetAvatar(ctx context.Context, userID string, uploadID *string) (*media.File, error) {
+	const op = "internal/features/user/service SetAvatar"
+
+	if uploadID != nil {
+		if _, err := uuid.Parse(*uploadID); err != nil {
+			return nil, sharederrors.ErrInvalidMediaAttachment
+		}
+	}
+
+	row, err := u.avatars.SetAvatar(ctx, userID, uploadID)
+	if err != nil {
+		if errors.Is(err, sharederrors.ErrInvalidMediaAttachment) {
+			return nil, err
+		}
+		u.log.Error("set avatar failed", zap.String("op", op), zap.String("user_id", userID), zap.Error(err))
+		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+
+	return media.Build(u.urls, row), nil
 }

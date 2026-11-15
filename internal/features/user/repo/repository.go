@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/killerquinn/referral-system-go/internal/features/user/dto"
+	"github.com/killerquinn/referral-system-go/internal/shared/media"
 	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
 )
 
@@ -201,14 +202,14 @@ func (r *Repository) User(ctx context.Context, callerUserID string, username str
 
 	var items dto.UserItems
 
-	if err := r.db.QueryRow(ctx, SelectUser, callerUserID, username).Scan(
+	if err := r.db.QueryRow(ctx, SelectUser, callerUserID, username).Scan(append([]any{
 		&items.Username,
 		&items.ReferredBy,
 		&items.OwnReferral,
 		&items.LastTimeRefUsed,
 		&items.IsBlocked,
 		&items.CreatedAt,
-	); err != nil {
+	}, items.AvatarRow.Targets()...)...); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return dto.UserItems{}, sharederrors.ErrUserNotFound
 		}
@@ -221,7 +222,7 @@ func (r *Repository) User(ctx context.Context, callerUserID string, username str
 func (r *Repository) Self(ctx context.Context, userID string) (item dto.SelfUserItems, err error) {
 	const op = "/internal/features/user/repo/repository.go User"
 
-	if err := r.db.QueryRow(ctx, SelectSelf, userID).Scan(
+	if err := r.db.QueryRow(ctx, SelectSelf, userID).Scan(append([]any{
 		&item.Username,
 		&item.ConnectedEmail,
 		&item.OwnReferral,
@@ -231,9 +232,24 @@ func (r *Repository) Self(ctx context.Context, userID string) (item dto.SelfUser
 		&item.IsBlocked,
 		&item.CreatedAt,
 		&item.LastLogin,
-	); err != nil {
+	}, item.AvatarRow.Targets()...)...); err != nil {
 		return dto.SelfUserItems{}, fmt.Errorf("%s:%w", op, err)
 	}
 
 	return item, err
+}
+
+// SetAvatar attaches (uploadID) or removes (nil) the avatar and returns the new avatar's upload columns.
+// sharederrors.ErrInvalidMediaAttachment if the upload isn't the user's ready, public avatar.
+func (r *Repository) SetAvatar(ctx context.Context, userID string, uploadID *string) (media.Row, error) {
+	const op = "internal/features/user/repo SetAvatar"
+
+	var row media.Row
+	if err := r.db.QueryRow(ctx, SetAvatar, userID, uploadID).Scan(row.Targets()...); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return media.Row{}, sharederrors.ErrInvalidMediaAttachment
+		}
+		return media.Row{}, fmt.Errorf("%s:%w", op, err)
+	}
+	return row, nil
 }

@@ -2,10 +2,20 @@ package repo
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/killerquinn/referral-system-go/internal/features/page/dto"
 	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
+)
+
+const (
+	pgUniqueViolation     = "23505"
+	pgForeignKeyViolation = "23503"
+	constraintPagePK      = "profile_pages_pkey"
 )
 
 type Repository struct {
@@ -16,57 +26,161 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
+// pageTargets returns Scan destinations for pageColumns + mediaColumns.
+func pageTargets(p *dto.PageItem) []any {
+	t := []any{
+		&p.Slug, &p.DisplayName, &p.Bio, &p.Settings, &p.IsPublished, &p.SlugChangedAt,
+		&p.CreatedAt, &p.UpdatedAt, &p.BackgroundUploadID, &p.MusicUploadID,
+	}
+	t = append(t, p.Media.Avatar.Targets()...)
+	t = append(t, p.Media.Background.Targets()...)
+	return append(t, p.Media.Music.Targets()...)
+}
+
+func pgCode(err error) (code, constraint string) {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code, pgErr.ConstraintName
+	}
+	return "", ""
+}
+
 func (r *Repository) CreatePage(ctx context.Context, userID, slug string, displayName *string, settings dto.PageSettings) (dto.PageItem, error) {
 	const op = "internal/features/page/repo CreatePage"
-	// TODO: unique_violation (23505): constraint on user_id (pkey) -> sharederrors.ErrPageAlreadyExists,
-	// on slug -> sharederrors.ErrSlugTaken (pgconn.PgError.ConstraintName tells which one)
-	return dto.PageItem{}, sharederrors.ErrNotImplemented
+
+	if _, err := r.db.Exec(ctx, InsertPage, userID, slug, displayName, settings); err != nil {
+		if code, constraint := pgCode(err); code == pgUniqueViolation {
+			if constraint == constraintPagePK {
+				return dto.PageItem{}, sharederrors.ErrPageAlreadyExists
+			}
+			return dto.PageItem{}, sharederrors.ErrSlugTaken
+		}
+		return dto.PageItem{}, fmt.Errorf("%s:%w", op, err)
+	}
+
+	return r.GetPageByUserID(ctx, userID)
 }
 
 func (r *Repository) GetPageByUserID(ctx context.Context, userID string) (dto.PageItem, error) {
 	const op = "internal/features/page/repo GetPageByUserID"
-	// TODO: pgx.ErrNoRows -> sharederrors.ErrPageNotFound
-	return dto.PageItem{}, sharederrors.ErrNotImplemented
+
+	var p dto.PageItem
+	if err := r.db.QueryRow(ctx, SelectPageByUserID, userID).Scan(pageTargets(&p)...); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return dto.PageItem{}, sharederrors.ErrPageNotFound
+		}
+		return dto.PageItem{}, fmt.Errorf("%s:%w", op, err)
+	}
+	return p, nil
 }
 
 func (r *Repository) GetPageBySlug(ctx context.Context, slug string) (dto.PageWithAuthor, error) {
 	const op = "internal/features/page/repo GetPageBySlug"
-	// TODO: pgx.ErrNoRows -> sharederrors.ErrPageNotFound
-	return dto.PageWithAuthor{}, sharederrors.ErrNotImplemented
+
+	var p dto.PageWithAuthor
+	targets := append(pageTargets(&p.PageItem), &p.UserID, &p.AuthorUsername, &p.OwnReferralKey, &p.AuthorBlocked)
+	if err := r.db.QueryRow(ctx, SelectPageBySlug, slug).Scan(targets...); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return dto.PageWithAuthor{}, sharederrors.ErrPageNotFound
+		}
+		return dto.PageWithAuthor{}, fmt.Errorf("%s:%w", op, err)
+	}
+	return p, nil
 }
 
-func (r *Repository) UpdatePage(ctx context.Context, userID string, displayName, bio *string, settings *dto.PageSettings, isPublished *bool) (dto.PageItem, error) {
+// UpdatePage: nil = leave as is. backgroundUploadID / musicUploadID must be checked with
+// IsUploadAttachable first; an upload deleted in between ends up as a FK violation -> ErrInvalidMediaAttachment.
+func (r *Repository) UpdatePage(ctx context.Context, userID string, displayName, bio *string, settings *dto.PageSettings,
+	isPublished *bool, backgroundUploadID, musicUploadID *string) (dto.PageItem, error) {
 	const op = "internal/features/page/repo UpdatePage"
-	// TODO: 0 rows -> sharederrors.ErrPageNotFound; "" for display_name / bio -> NULL (NULLIF in SQL)
-	return dto.PageItem{}, sharederrors.ErrNotImplemented
+
+	res, err := r.db.Exec(ctx, UpdatePageByUserID, userID, displayName, bio, settings, isPublished, backgroundUploadID, musicUploadID)
+	if err != nil {
+		if code, _ := pgCode(err); code == pgForeignKeyViolation {
+			return dto.PageItem{}, sharederrors.ErrInvalidMediaAttachment
+		}
+		return dto.PageItem{}, fmt.Errorf("%s:%w", op, err)
+	}
+	if res.RowsAffected() == 0 {
+		return dto.PageItem{}, sharederrors.ErrPageNotFound
+	}
+
+	return r.GetPageByUserID(ctx, userID)
 }
 
 func (r *Repository) ChangeSlug(ctx context.Context, userID, newSlug string) error {
 	const op = "internal/features/page/repo ChangeSlug"
-	// TODO: 0 rows -> sharederrors.ErrPageNotFound, unique_violation -> sharederrors.ErrSlugTaken
-	return sharederrors.ErrNotImplemented
+
+	res, err := r.db.Exec(ctx, UpdatePageSlug, userID, newSlug)
+	if err != nil {
+		if code, _ := pgCode(err); code == pgUniqueViolation {
+			return sharederrors.ErrSlugTaken
+		}
+		return fmt.Errorf("%s:%w", op, err)
+	}
+	if res.RowsAffected() == 0 {
+		return sharederrors.ErrPageNotFound
+	}
+	return nil
 }
 
 func (r *Repository) IsSlugTaken(ctx context.Context, slug string) (bool, error) {
 	const op = "internal/features/page/repo IsSlugTaken"
-	// TODO
-	return false, sharederrors.ErrNotImplemented
+
+	var taken bool
+	if err := r.db.QueryRow(ctx, SelectSlugExists, slug).Scan(&taken); err != nil {
+		return false, fmt.Errorf("%s:%w", op, err)
+	}
+	return taken, nil
+}
+
+// IsUploadAttachable: the upload is the owner's, ready, public and has the given purpose.
+func (r *Repository) IsUploadAttachable(ctx context.Context, uploadID, ownerID, purpose string) (bool, error) {
+	const op = "internal/features/page/repo IsUploadAttachable"
+
+	var ok bool
+	if err := r.db.QueryRow(ctx, SelectUploadAttachable, uploadID, ownerID, purpose).Scan(&ok); err != nil {
+		return false, fmt.Errorf("%s:%w", op, err)
+	}
+	return ok, nil
 }
 
 func (r *Repository) CountReferrals(ctx context.Context, authorID string) (int, error) {
 	const op = "internal/features/page/repo CountReferrals"
-	// TODO
-	return 0, sharederrors.ErrNotImplemented
+
+	var n int
+	if err := r.db.QueryRow(ctx, CountReferralsOfAuthor, authorID).Scan(&n); err != nil {
+		return 0, fmt.Errorf("%s:%w", op, err)
+	}
+	return n, nil
 }
 
 func (r *Repository) GetRecentPostPreviews(ctx context.Context, authorID string, limit int) ([]dto.PostPreview, error) {
 	const op = "internal/features/page/repo GetRecentPostPreviews"
-	// TODO: empty result is not an error
-	return nil, sharederrors.ErrNotImplemented
+
+	rows, err := r.db.Query(ctx, SelectRecentPostPreviews, authorID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+	previews, err := pgx.CollectRows(rows, pgx.RowToStructByName[dto.PostPreview])
+	if err != nil {
+		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+	return previews, nil
 }
 
+// GetViewerContext: sharederrors.ErrUserNotFound if the viewer doesn't exist anymore.
 func (r *Repository) GetViewerContext(ctx context.Context, viewerID, authorID string) (dto.ViewerContext, error) {
 	const op = "internal/features/page/repo GetViewerContext"
-	// TODO: unknown viewer (deleted after token was issued) -> treat as anonymous in the service
-	return dto.ViewerContext{}, sharederrors.ErrNotImplemented
+
+	var vc dto.ViewerContext
+	if err := r.db.QueryRow(ctx, SelectViewerContext, viewerID, authorID).Scan(
+		&vc.IsReferral, &vc.ReferredSince, &vc.HasOtherReferrer,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return dto.ViewerContext{}, sharederrors.ErrUserNotFound
+		}
+		return dto.ViewerContext{}, fmt.Errorf("%s:%w", op, err)
+	}
+	return vc, nil
 }

@@ -12,11 +12,16 @@ const (
 		i.id,
 		i.author_id,
 		u.username AS author_username,
+		av.media_type AS author_avatar_type,
+		av.storage_key AS author_avatar_key,
+		av.variants->>'thumb' AS author_avatar_thumb,
+		av.blurhash AS author_avatar_blurhash,
 		i.title,
 		i.body,
 		i.created_at
 	FROM inserted i
 	JOIN users u ON u.id = i.author_id
+	LEFT JOIN uploads av ON av.id = u.avatar_upload_id AND av.status = 'ready' AND av.bucket = 'public'
 	`
 
 	// $1 post_id
@@ -25,6 +30,10 @@ const (
 		p.id,
 		p.author_id,
 		u.username AS author_username,
+		av.media_type AS author_avatar_type,
+		av.storage_key AS author_avatar_key,
+		av.variants->>'thumb' AS author_avatar_thumb,
+		av.blurhash AS author_avatar_blurhash,
 		p.title,
 		p.body,
 		p.created_at,
@@ -32,6 +41,7 @@ const (
 		COALESCE(u.is_blocked, FALSE) AS is_blocked
 	FROM posts p
 	JOIN users u ON u.id = p.author_id
+	LEFT JOIN uploads av ON av.id = u.avatar_upload_id AND av.status = 'ready' AND av.bucket = 'public'
 	WHERE p.id = $1
 	`
 
@@ -59,12 +69,17 @@ const (
 		p.id,
 		p.author_id,
 		u.username AS author_username,
+		av.media_type AS author_avatar_type,
+		av.storage_key AS author_avatar_key,
+		av.variants->>'thumb' AS author_avatar_thumb,
+		av.blurhash AS author_avatar_blurhash,
 		p.title,
 		p.body,
 		p.created_at,
 		p.updated_at
 	FROM posts p
 	JOIN users u ON u.id = p.author_id
+	LEFT JOIN uploads av ON av.id = u.avatar_upload_id AND av.status = 'ready' AND av.bucket = 'public'
 	WHERE p.author_id = $1
 	  AND (
 		$2::timestamptz IS NULL
@@ -80,12 +95,17 @@ const (
 		p.id,
 		p.author_id,
 		u.username AS author_username,
+		av.media_type AS author_avatar_type,
+		av.storage_key AS author_avatar_key,
+		av.variants->>'thumb' AS author_avatar_thumb,
+		av.blurhash AS author_avatar_blurhash,
 		p.title,
 		p.body,
 		p.created_at,
 		p.updated_at
 	FROM posts p
 	JOIN users u ON u.id = p.author_id
+	LEFT JOIN uploads av ON av.id = u.avatar_upload_id AND av.status = 'ready' AND av.bucket = 'public'
 	WHERE u.username = $1
 	  AND (
 		$2::timestamptz IS NULL

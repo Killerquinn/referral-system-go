@@ -13,6 +13,7 @@ import (
 	"github.com/killerquinn/referral-system-go/internal/features/user/dto"
 	httpfeatures "github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/http-features"
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/jwtcontext"
+	"github.com/killerquinn/referral-system-go/internal/shared/media"
 	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
 )
 
@@ -23,6 +24,7 @@ type UserService interface {
 	CreateReferralKey(ctx context.Context, userID string, referralkey string) (string, error)
 	FindUserByUsername(ctx context.Context, callerUserID string, username string) (dto.UserByUsernameResponse, error)
 	GetSelf(ctx context.Context, userID string) (*dto.SelfUser, error)
+	SetAvatar(ctx context.Context, userID string, uploadID *string) (*media.File, error)
 }
 type UserHandler struct {
 	uService UserService
@@ -246,6 +248,37 @@ func (uh *UserHandler) UserByUsername(w http.ResponseWriter, r *http.Request) {
 	}
 
 	responseReturn(w, http.StatusOK, resp)
+}
+
+// SetAvatar: PUT /user/avatar {"upload_id": "..."} or {"upload_id": null} to remove.
+func (uh *UserHandler) SetAvatar(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value(jwtcontext.UserIDKey).(string)
+	if !ok {
+		responseReturn(w, http.StatusUnauthorized, dto.SetAvatarResponse{Message: "unauthorized"})
+		return
+	}
+
+	var req dto.SetAvatarRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<10)).Decode(&req); err != nil {
+		responseReturn(w, http.StatusBadRequest, dto.SetAvatarResponse{Message: "invalid request body"})
+		return
+	}
+
+	avatar, err := uh.uService.SetAvatar(r.Context(), userID, req.UploadID)
+	if err != nil {
+		if errors.Is(err, sharederrors.ErrInvalidMediaAttachment) {
+			responseReturn(w, http.StatusBadRequest, dto.SetAvatarResponse{Message: err.Error()})
+			return
+		}
+		responseReturn(w, http.StatusInternalServerError, dto.SetAvatarResponse{Message: "internal server error"})
+		return
+	}
+
+	msg := "avatar updated"
+	if avatar == nil {
+		msg = "avatar removed"
+	}
+	responseReturn(w, http.StatusOK, dto.SetAvatarResponse{Avatar: avatar, Message: msg})
 }
 
 func responseReturn(w http.ResponseWriter, status int, resp any, headers ...httpfeatures.Header) {

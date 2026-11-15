@@ -43,3 +43,4 @@ refresh:
 
 options:
   baseurl: "http://myapp.com"
+  frontend_url: "http://localhost:5173"

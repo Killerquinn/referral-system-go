@@ -9,6 +9,7 @@ import (
 
 	"github.com/killerquinn/referral-system-go/internal/features/post/dto"
 	httpfeatures "github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/http-features"
+	"github.com/killerquinn/referral-system-go/internal/shared/media"
 	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
 	"go.uber.org/zap"
 )
@@ -28,14 +29,26 @@ type PostService struct {
 	log     *zap.Logger
 	baseurl string
 	storage postStorage
+	urls    media.URLBuilder // nil when R2 is disabled -> no avatar URLs
 }
 
-func New(log *zap.Logger, baseurl string, storage postStorage) *PostService {
+func New(log *zap.Logger, baseurl string, storage postStorage, urls media.URLBuilder) *PostService {
 	return &PostService{
 		log:     log,
 		baseurl: baseurl,
 		storage: storage,
+		urls:    urls,
 	}
+}
+
+// authorAvatar builds the author's avatar from the joined upload columns (the thumb is enough for posts).
+func (ps *PostService) authorAvatar(e dto.PostItem) *media.File {
+	return media.Build(ps.urls, media.Row{
+		MediaType:  e.AuthorAvatarType,
+		StorageKey: e.AuthorAvatarKey,
+		ThumbKey:   e.AuthorAvatarThumb,
+		Blurhash:   e.AuthorAvatarBlurhash,
+	})
 }
 
 func (ps *PostService) CreatePost(ctx context.Context, authorID string, req dto.CreatePostRequest) (dto.PostItem, error) {
@@ -52,6 +65,7 @@ func (ps *PostService) CreatePost(ctx context.Context, authorID string, req dto.
 		return dto.PostItem{}, fmt.Errorf("%s:%w", op, err)
 	}
 
+	item.AuthorAvatar = ps.authorAvatar(item)
 	return item, nil
 }
 
@@ -85,6 +99,7 @@ func (ps *PostService) GetPost(ctx context.Context, callerID, postID string) (dt
 		return dto.PostItem{}, sharederrors.ErrPostAccessDenied
 	}
 
+	post.AuthorAvatar = ps.authorAvatar(post)
 	return post, err
 }
 
@@ -208,6 +223,7 @@ func (ps *PostService) Feed(ctx context.Context, callerID string, params dto.Pos
 			ID:             e.ID,
 			AuthorUsername: e.AuthorUsername,
 			AuthorURL:      httpfeatures.BuildUrl(ps.baseurl, e.AuthorUsername),
+			AuthorAvatar:   ps.authorAvatar(e),
 			Title:          e.Title,
 			Body:           e.Body,
 			CreatedAt:      e.CreatedAt,
@@ -321,7 +337,8 @@ func (ps *PostService) PostsOfUser(ctx context.Context, callerID, username strin
 		items = append(items, dto.PostItem{
 			ID:             e.ID,
 			AuthorUsername: e.AuthorUsername,
-			AuthorURL:      httpfeatures.BuildUrl(ps.baseurl, e.AuthorUsername), //add url builder by username
+			AuthorURL:      httpfeatures.BuildUrl(ps.baseurl, e.AuthorUsername),
+			AuthorAvatar:   ps.authorAvatar(e), //add url builder by username
 			Title:          e.Title,
 			Body:           e.Body,
 			CreatedAt:      e.CreatedAt,

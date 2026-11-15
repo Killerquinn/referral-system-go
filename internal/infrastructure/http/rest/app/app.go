@@ -8,6 +8,8 @@ import (
 	"github.com/killerquinn/referral-system-go/internal/config"
 	authrepopackage "github.com/killerquinn/referral-system-go/internal/features/auth/repo"
 	authservice "github.com/killerquinn/referral-system-go/internal/features/auth/service"
+	pagerepopackage "github.com/killerquinn/referral-system-go/internal/features/page/repo"
+	pageservice "github.com/killerquinn/referral-system-go/internal/features/page/service"
 	postrepopackage "github.com/killerquinn/referral-system-go/internal/features/post/repo"
 	postservice "github.com/killerquinn/referral-system-go/internal/features/post/service"
 	referralrepopackage "github.com/killerquinn/referral-system-go/internal/features/referral/repo"
@@ -19,8 +21,12 @@ import (
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/http/rest"
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/queue"
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/storage/r2"
+	"github.com/killerquinn/referral-system-go/internal/shared/media"
 	"go.uber.org/zap"
 )
+
+// how often an author can change their page address
+const pageSlugCooldown = 30 * 24 * time.Hour
 
 type App struct {
 	RestServer *rest.App
@@ -29,6 +35,12 @@ type App struct {
 
 func New(logger *zap.Logger, pool *pgxpool.Pool, storage *r2.Client, port int, tokenTTL time.Duration, refreshTTL time.Duration, cfg *config.Config) (*App, error) {
 	const op = "New"
+
+	// public file URLs for avatars / page media. UNTYPED nil when R2 is disabled (see media.URLBuilder).
+	var urls media.URLBuilder
+	if storage != nil {
+		urls = storage
+	}
 
 	//AUTH INTERFACES
 
@@ -61,6 +73,8 @@ func New(logger *zap.Logger, pool *pgxpool.Pool, storage *r2.Client, port int, t
 		userqueries,
 		userqueries,
 		userqueries,
+		userqueries, // avatars
+		urls,
 	)
 
 	//add referral feature there
@@ -81,6 +95,19 @@ func New(logger *zap.Logger, pool *pgxpool.Pool, storage *r2.Client, port int, t
 		logger,
 		cfg.Options.BaseUrl,
 		postrepo,
+		urls,
+	)
+
+	//PAGE INTERFACES
+
+	pagerepo := pagerepopackage.New(pool)
+
+	pageService := pageservice.New(
+		logger,
+		cfg.Options.FrontendURL,
+		pageSlugCooldown,
+		pagerepo,
+		urls,
 	)
 
 	//UPLOAD INTERFACES
@@ -105,7 +132,7 @@ func New(logger *zap.Logger, pool *pgxpool.Pool, storage *r2.Client, port int, t
 	// workers call back into the service (process / cleanup)
 	jobs.SetUploadProcessor(uploadService)
 
-	app := rest.NewApp(logger, cfg, authService, userService, referralService, postservice, uploadService)
+	app := rest.NewApp(logger, cfg, authService, userService, referralService, postservice, uploadService, pageService)
 
 	return &App{
 		RestServer: app,

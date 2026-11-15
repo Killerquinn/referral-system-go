@@ -88,6 +88,8 @@ type RefreshConfig struct {
 
 type Options struct {
 	BaseUrl string `koanf:"baseurl"`
+	// where the Vue app lives; used for links that open the frontend (e.g. page referral links)
+	FrontendURL string `koanf:"frontend_url"`
 }
 
 func LoadConfig() *Config {

@@ -34,6 +34,7 @@ var (
 	ErrInvalidSlug                       = errors.New("page address must be 3-32 characters: a-z, 0-9, _ and -")
 	ErrInvalidPageSettings               = errors.New("invalid page settings")
 	ErrSlugChangeCooldown                = errors.New("page address was changed recently, try later")
+	ErrInvalidMediaAttachment            = errors.New("file not found, not processed yet, or not suitable for this place")
 	ErrUploadNotFound                    = errors.New("upload not found")
 	ErrUploadNotPending                  = errors.New("upload is already completed or expired")
 	ErrUploadIncomplete                  = errors.New("file was not uploaded or its size does not match")

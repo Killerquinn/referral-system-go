@@ -76,11 +76,37 @@ func AuthMiddleware(secret string) func(http.Handler) http.Handler {
 func OptionalAuthMiddleware(secret string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// TODO: same parsing as AuthMiddleware (worth extracting a shared parseUserID(r, secret) (string, error)),
-			// but on any failure just call next.ServeHTTP(w, r) without a user in the context
+			if userID, ok := optionalUserID(r, secret); ok {
+				r = r.WithContext(context.WithValue(r.Context(), jwtcontext.UserIDKey, userID))
+			}
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// optionalUserID does the same checks as AuthMiddleware, but just reports "no user" instead of writing 401.
+func optionalUserID(r *http.Request, secret string) (string, bool) {
+	tokenStr, found := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if !found || tokenStr == "" {
+		return "", false
+	}
+
+	token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
+		return []byte(secret), nil
+	},
+		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+		jwt.WithExpirationRequired(),
+	)
+	if err != nil || !token.Valid {
+		return "", false
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return "", false
+	}
+	sub, ok := claims["sub"].(string)
+	return sub, ok && sub != ""
 }
 
 type client struct {

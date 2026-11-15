@@ -15,6 +15,8 @@ import (
 	authhttphandler "github.com/killerquinn/referral-system-go/internal/features/auth/http-handler"
 	httphandler "github.com/killerquinn/referral-system-go/internal/features/auth/http-handler"
 	authservice "github.com/killerquinn/referral-system-go/internal/features/auth/service"
+	pagehttphandler "github.com/killerquinn/referral-system-go/internal/features/page/http"
+	pageservice "github.com/killerquinn/referral-system-go/internal/features/page/service"
 	posthttphandler "github.com/killerquinn/referral-system-go/internal/features/post/http"
 	postservice "github.com/killerquinn/referral-system-go/internal/features/post/service"
 	referralhttphandler "github.com/killerquinn/referral-system-go/internal/features/referral/http"
@@ -34,7 +36,7 @@ type App struct {
 	port   string
 }
 
-func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *userservice.Uservice, referral *referralservice.RefService, ps *postservice.PostService, us *uploadservice.UploadService) *App {
+func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *userservice.Uservice, referral *referralservice.RefService, ps *postservice.PostService, us *uploadservice.UploadService, pgs *pageservice.PageService) *App {
 	r := chi.NewRouter()
 
 	log.Info("adding middleware")
@@ -67,6 +69,13 @@ func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *u
 	newReferralHandler := referralhttphandler.NewRefferalHandler(referral)
 	newPostHandler := posthttphandler.NewPostHandler(ps)
 	newUploadHandler := uploadhttphandler.NewUploadHandler(us)
+	newPageHandler := pagehttphandler.NewPageHandler(pgs)
+
+	// public: token optional, never 401 (anonymous visitors see published pages)
+	r.Group(func(r chi.Router) {
+		r.Use(localmdw.OptionalAuthMiddleware(cfg.JWT.Secret))
+		r.Get("/api/v1/pages/{slug}", newPageHandler.GetPublicPage)
+	})
 
 	r.Group(func(r chi.Router) {
 		r.Use(localmdw.AuthMiddleware(cfg.JWT.Secret))
@@ -76,6 +85,7 @@ func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *u
 		r.Put("/user/changepassword", newUserHandler.ChangeUserPassword)
 		r.Put("/user/changereferrer", newUserHandler.ChangeReferrer)
 		r.Post("/user/createkey", newUserHandler.CreateUniqueReferralKey)
+		r.Put("/user/avatar", newUserHandler.SetAvatar)
 
 		//===================================================================
 		//getuser
@@ -105,6 +115,12 @@ func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *u
 		r.Post("/api/v1/uploads/{uploadID}/complete", newUploadHandler.CompleteUpload)
 		r.Get("/api/v1/uploads/{uploadID}", newUploadHandler.GetUpload)
 		r.Delete("/api/v1/uploads/{uploadID}", newUploadHandler.DeleteUpload)
+		//page (static "me" / "slug-available" win over {slug}; both are reserved slugs too)
+		r.Get("/api/v1/pages/me", newPageHandler.GetMyPage)
+		r.Post("/api/v1/pages", newPageHandler.CreatePage)
+		r.Put("/api/v1/pages/me", newPageHandler.UpdateMyPage)
+		r.Put("/api/v1/pages/me/slug", newPageHandler.ChangeSlug)
+		r.Get("/api/v1/pages/slug-available", newPageHandler.CheckSlug) // ?slug=
 	})
 
 	log.Info("setup server")

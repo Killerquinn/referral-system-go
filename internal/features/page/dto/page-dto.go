@@ -1,6 +1,10 @@
 package dto
 
-import "time"
+import (
+	"time"
+
+	"github.com/killerquinn/referral-system-go/internal/shared/media"
+)
 
 type (
 	// ===== settings (stored in profile_pages.settings JSONB) =====
@@ -16,7 +20,7 @@ type (
 	}
 
 	Background struct {
-		Type     string    `json:"type"`               // "color" | "gradient" (later: "image", "video" after R2)
+		Type     string    `json:"type"`               // "color" | "gradient" | "media" (the page's background upload)
 		Color    *string   `json:"color,omitempty"`    // hex, for type "color"
 		Gradient *Gradient `json:"gradient,omitempty"` // for type "gradient"
 	}
@@ -46,23 +50,39 @@ type (
 	// ===== entity (owner / editor view) =====
 
 	PageItem struct {
-		Slug          string       `json:"slug" db:"slug"`
-		DisplayName   *string      `json:"display_name,omitempty" db:"display_name"`
-		Bio           *string      `json:"bio,omitempty" db:"bio"`
-		Settings      PageSettings `json:"settings" db:"settings"`
-		IsPublished   bool         `json:"is_published" db:"is_published"`
-		SlugChangedAt *time.Time   `json:"slug_changed_at,omitempty" db:"slug_changed_at"`
-		CreatedAt     time.Time    `json:"created_at" db:"created_at"`
-		UpdatedAt     *time.Time   `json:"updated_at,omitempty" db:"updated_at"`
+		Slug          string       `json:"slug"`
+		DisplayName   *string      `json:"display_name,omitempty"`
+		Bio           *string      `json:"bio,omitempty"`
+		Settings      PageSettings `json:"settings"`
+		IsPublished   bool         `json:"is_published"`
+		SlugChangedAt *time.Time   `json:"slug_changed_at,omitempty"`
+		CreatedAt     time.Time    `json:"created_at"`
+		UpdatedAt     *time.Time   `json:"updated_at,omitempty"`
+
+		// attached files: ids for the editor, resolved files for the preview
+		BackgroundUploadID *string     `json:"background_upload_id,omitempty"`
+		MusicUploadID      *string     `json:"music_upload_id,omitempty"`
+		Avatar             *media.File `json:"avatar,omitempty"` // the owner's avatar (set in settings, not here)
+		BackgroundMedia    *media.File `json:"background_media,omitempty"`
+		Music              *media.File `json:"music,omitempty"`
+
+		Media PageMediaRows `json:"-"` // filled by the repo, turned into the files above by the service
+	}
+
+	// PageMediaRows are the joined uploads columns for the files a page shows.
+	PageMediaRows struct {
+		Avatar     media.Row
+		Background media.Row
+		Music      media.Row
 	}
 
 	// PageWithAuthor is a repo-level row for the public page: the page + what we need about its owner.
 	PageWithAuthor struct {
 		PageItem
-		UserID         string  `db:"user_id"`
-		AuthorUsername string  `db:"author_username"`
-		OwnReferralKey *string `db:"own_referral_key"`
-		AuthorBlocked  bool    `db:"author_blocked"`
+		UserID         string
+		AuthorUsername string
+		OwnReferralKey *string
+		AuthorBlocked  bool
 	}
 
 	// ===== public page (what a visitor sees) =====
@@ -87,7 +107,12 @@ type (
 		Bio            *string      `json:"bio,omitempty"`
 		Settings       PageSettings `json:"settings"`
 		AuthorUsername string       `json:"author_username"`
-		ReferralLink   *string      `json:"referral_link,omitempty"` // nil if the author has no referral key yet
+		ReferralKey    *string      `json:"referral_key,omitempty"`  // nil if the author has no referral key yet
+		ReferralLink   *string      `json:"referral_link,omitempty"` // baseurl/auth?ref=<key>, nil without a key
+
+		Avatar          *media.File `json:"avatar,omitempty"`
+		BackgroundMedia *media.File `json:"background_media,omitempty"` // used when settings.background.type = "media"
+		Music           *media.File `json:"music,omitempty"`
 
 		// block data, nil when the block is disabled
 		ReferralCount *int          `json:"referral_count,omitempty"` // number only, never who
@@ -124,6 +149,9 @@ type (
 		Bio         *string       `json:"bio,omitempty"`
 		Settings    *PageSettings `json:"settings,omitempty"`
 		IsPublished *bool         `json:"is_published,omitempty"`
+		// nil = leave as is, "" = detach, otherwise an id of the user's ready upload with the matching purpose
+		BackgroundUploadID *string `json:"background_upload_id,omitempty"`
+		MusicUploadID      *string `json:"music_upload_id,omitempty"`
 	}
 
 	// ===== slug =====

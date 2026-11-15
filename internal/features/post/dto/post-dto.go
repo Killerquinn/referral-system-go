@@ -1,19 +1,29 @@
 package dto
 
-import "time"
+import (
+	"time"
+
+	"github.com/killerquinn/referral-system-go/internal/shared/media"
+)
 
 type (
 	// ===== entity =====
 
 	PostItem struct {
-		ID             string     `json:"id" db:"id"`
-		AuthorID       string     `json:"-" db:"author_id"`
-		AuthorUsername string     `json:"author_username" db:"author_username"`
-		AuthorURL      string     `json:"author_url"`
-		Title          string     `json:"title" db:"title"`
-		Body           string     `json:"body" db:"body"`
-		CreatedAt      time.Time  `json:"created_at" db:"created_at"`
-		UpdatedAt      *time.Time `json:"updated_at,omitempty" db:"updated_at"`
+		ID             string      `json:"id" db:"id"`
+		AuthorID       string      `json:"-" db:"author_id"`
+		AuthorUsername string      `json:"author_username" db:"author_username"`
+		AuthorURL      string      `json:"author_url"`
+		AuthorAvatar   *media.File `json:"author_avatar,omitempty"`
+		// author's avatar upload (LEFT JOIN), turned into AuthorAvatar by the service
+		AuthorAvatarType     *string    `json:"-" db:"author_avatar_type"`
+		AuthorAvatarKey      *string    `json:"-" db:"author_avatar_key"`
+		AuthorAvatarThumb    *string    `json:"-" db:"author_avatar_thumb"`
+		AuthorAvatarBlurhash *string    `json:"-" db:"author_avatar_blurhash"`
+		Title                string     `json:"title" db:"title"`
+		Body                 string     `json:"body" db:"body"`
+		CreatedAt            time.Time  `json:"created_at" db:"created_at"`
+		UpdatedAt            *time.Time `json:"updated_at,omitempty" db:"updated_at"`
 	}
 
 	// ===== create =====
