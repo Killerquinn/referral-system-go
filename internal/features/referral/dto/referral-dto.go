@@ -53,4 +53,22 @@ type (
 		HasMore    bool           `json:"has_more"`
 		Message    string         `json:"message"`
 	}
+
+	// DailyReferralCount is one row from the repo: a UTC day that had at least one new referral.
+	DailyReferralCount struct {
+		Day   time.Time `db:"day"`
+		Count int       `db:"count"`
+	}
+
+	ReferralStatsPoint struct {
+		Date  string `json:"date"` // YYYY-MM-DD, UTC
+		Count int    `json:"count"`
+	}
+
+	ReferralStatsResponse struct {
+		Days    int                  `json:"days"`
+		Total   int                  `json:"total"`  // new referrals inside the period
+		Points  []ReferralStatsPoint `json:"points"` // one per day, oldest first, zero days included
+		Message string               `json:"message"`
+	}
 )

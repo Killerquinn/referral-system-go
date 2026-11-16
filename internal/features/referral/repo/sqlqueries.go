@@ -91,4 +91,18 @@ const (
 	) w
 	ORDER BY o.ord;
 	`
+
+	// New referrals of $1 per UTC day, starting from $2. Days without referrals are absent
+	// (the service fills them with zeros). Uses idx_referrals_referrer_joined:
+	// equality on referral_owner + range on referral_timestamp.
+	GetDailyReferralCountsQuery = `
+	SELECT
+		date_trunc('day', referral_timestamp AT TIME ZONE 'UTC') AS day,
+		COUNT(*)::int AS count
+	FROM referrals
+	WHERE referral_owner = $1
+		AND referral_timestamp >= $2
+	GROUP BY 1
+	ORDER BY 1
+	`
 )

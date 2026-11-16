@@ -27,6 +27,7 @@ type referralCheck interface {
 	GetReferralsByOwnUserID(ctx context.Context, username string, cursor *time.Time, lastID *string, limit int) (entities []dto.ReferralItem, err error)
 	GetActualQuantityOfReferrers(ctx context.Context, userid string, startFrom *time.Time, endUntil *time.Time) (int, error)
 	GetWinners(ctx context.Context, offsets []int, sponsorID string, startFrom *time.Time, endUntil *time.Time) ([]dto.WinnersDTO, error)
+	GetDailyReferralCounts(ctx context.Context, ownerID string, since time.Time) ([]dto.DailyReferralCount, error)
 }
 
 func New(
@@ -205,5 +206,44 @@ func (rfs *RefService) StartContest(ctx context.Context, sponsorID string, winne
 	return dto.ContestBetweenReferralsResponse{
 		Winners: calculatedWinners,
 		Message: "users raffled successfully",
+	}, nil
+}
+
+// ReferralStats builds a per-day series for the last `days` days (today included, UTC).
+// The repo only returns days that had referrals; the gaps are filled with zeros here,
+// so the chart always gets exactly `days` points.
+func (rfs *RefService) ReferralStats(ctx context.Context, ownerID string, days int) (*dto.ReferralStatsResponse, error) {
+	const op = "internal/features/referral/service - ReferralStats"
+
+	now := time.Now().UTC()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	since := today.AddDate(0, 0, -(days - 1))
+
+	rows, err := rfs.refCheck.GetDailyReferralCounts(ctx, ownerID, since)
+	if err != nil {
+		rfs.log.Error("failed to get daily referral counts", zap.Error(err), zap.String("owner_id", ownerID), zap.String("op", op))
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+
+	const layout = "2006-01-02"
+	byDay := make(map[string]int, len(rows))
+	for _, row := range rows {
+		byDay[row.Day.UTC().Format(layout)] += row.Count
+	}
+
+	points := make([]dto.ReferralStatsPoint, 0, days)
+	total := 0
+	for d := since; !d.After(today); d = d.AddDate(0, 0, 1) {
+		key := d.Format(layout)
+		c := byDay[key]
+		total += c
+		points = append(points, dto.ReferralStatsPoint{Date: key, Count: c})
+	}
+
+	return &dto.ReferralStatsResponse{
+		Days:    days,
+		Total:   total,
+		Points:  points,
+		Message: "ok",
 	}, nil
 }

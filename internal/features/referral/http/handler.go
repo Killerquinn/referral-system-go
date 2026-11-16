@@ -22,6 +22,7 @@ type ReferralService interface {
 	WhoseReferralUserIs(ctx context.Context, username string) (referrer string, referrerprofileURL string, referrerSince time.Time, err error)
 	CheckCurrentReferralList(ctx context.Context, referrerID string, params dto.ReferralListParams) (*dto.CurrentReferralListResponse, error)
 	StartContest(ctx context.Context, sponsorID string, winnersQuantity int, startFrom *time.Time, endUntil *time.Time) (dto.ContestBetweenReferralsResponse, error)
+	ReferralStats(ctx context.Context, ownerID string, days int) (*dto.ReferralStatsResponse, error)
 }
 
 type ReferralHandler struct {
@@ -42,6 +43,9 @@ const (
 	maxLimit           = 100
 	minWinnersQuantity = 1
 	maxWinnersQuantity = 100
+
+	defaultStatsDays = 30
+	maxStatsDays     = 90
 )
 
 func (rh *ReferralHandler) CurrentReferralList(w http.ResponseWriter, r *http.Request) { // cursor based pagination
@@ -199,6 +203,33 @@ func (rh *ReferralHandler) SeeWhoseReferralAlready(w http.ResponseWriter, r *htt
 	}
 
 	responseReturn(w, http.StatusOK, response)
+}
+
+// ReferralStats returns how many new referrals the caller got per day (UTC) over the last ?days= days.
+func (rh *ReferralHandler) ReferralStats(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value(jwtcontext.UserIDKey).(string)
+	if !ok {
+		responseReturn(w, http.StatusUnauthorized, dto.ReferralStatsResponse{Points: []dto.ReferralStatsPoint{}, Message: "unauthorized"})
+		return
+	}
+
+	days := defaultStatsDays
+	if raw := r.URL.Query().Get("days"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 || n > maxStatsDays {
+			responseReturn(w, http.StatusBadRequest, dto.ReferralStatsResponse{Points: []dto.ReferralStatsPoint{}, Message: fmt.Sprintf("days must be a number from 1 to %d", maxStatsDays)})
+			return
+		}
+		days = n
+	}
+
+	resp, err := rh.rService.ReferralStats(r.Context(), userID, days)
+	if err != nil {
+		responseReturn(w, http.StatusInternalServerError, dto.ReferralStatsResponse{Points: []dto.ReferralStatsPoint{}, Message: "internal server error"})
+		return
+	}
+
+	responseReturn(w, http.StatusOK, resp)
 }
 
 func responseReturn(w http.ResponseWriter, status int, resp any, headers ...httpfeatures.Header) {

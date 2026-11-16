@@ -13,7 +13,7 @@ type (
 
 	PageSettings struct {
 		Background Background `json:"background"`
-		Effects    []string   `json:"effects"` // from allowedEffects
+		Effects    []string   `json:"effects"` // from effectGroups, limited per group
 		Theme      Theme      `json:"theme"`
 		Links      []Link     `json:"links"`
 		Blocks     []Block    `json:"blocks"` // order in the slice = order on the page

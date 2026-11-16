@@ -103,6 +103,7 @@ func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *u
 		r.Get("/api/v1/referrals", newReferralHandler.CurrentReferralList)
 		r.Post("/api/v1/referrals/draw", newReferralHandler.ContestBetweenReferrals)
 		r.Get("/api/v1/referralinfo/{identifier}", newReferralHandler.SeeWhoseReferralAlready)
+		r.Get("/api/v1/referral-stats", newReferralHandler.ReferralStats)
 		//reward
 		//post
 		r.Post("/api/v1/posts", newPostHandler.CreatePost)

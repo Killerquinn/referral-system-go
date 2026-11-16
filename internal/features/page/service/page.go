@@ -79,7 +79,6 @@ func replaced(previous, next *string) bool {
 
 var (
 	allowedBackgroundTypes = map[string]struct{}{"color": {}, "gradient": {}, "media": {}}
-	allowedEffects         = map[string]struct{}{"snow": {}, "particles": {}, "rain": {}, "typewriter_bio": {}, "glow_name": {}, "tilt_card": {}}
 	allowedCardStyles      = map[string]struct{}{"glass": {}, "solid": {}, "transparent": {}}
 	allowedFonts           = map[string]struct{}{"inter": {}, "jetbrains_mono": {}, "space_grotesk": {}, "playfair": {}}
 	allowedLinkTypes       = map[string]struct{}{"telegram": {}, "discord": {}, "youtube": {}, "twitch": {}, "tiktok": {}, "instagram": {}, "github": {}, "website": {}}
@@ -95,12 +94,33 @@ var (
 		"dashboard": {}, "referrals": {}, "p": {}, "media": {}, "uploads": {},
 	}
 
+	// effect -> its group; each group has its own limit (effectGroupLimits)
+	effectGroups = map[string]string{
+		// canvas over the background
+		"snow": effectGroupBackground, "particles": effectGroupBackground, "rain": effectGroupBackground,
+		"stars": effectGroupBackground, "fireflies": effectGroupBackground, "sakura": effectGroupBackground,
+		"smoke": effectGroupBackground,
+		// how the name is drawn — they all fight over color/text-shadow, so only one
+		"glow_name": effectGroupName, "shimmer_name": effectGroupName, "neon_name": effectGroupName,
+		"glitch_name": effectGroupName, "smolder_name": effectGroupName,
+		// independent extras
+		"typewriter_bio": effectGroupExtra, "tilt_card": effectGroupExtra, "cursor_wind": effectGroupExtra,
+	}
+	effectGroupLimits = map[string]int{
+		effectGroupBackground: 3, // was the overall limit before groups, so old pages stay valid
+		effectGroupName:       1,
+		effectGroupExtra:      3,
+	}
+
 	slugRe = regexp.MustCompile(`^[a-z0-9_-]{3,32}$`)
 	hexRe  = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 )
 
 const (
-	maxEffects           = 3
+	effectGroupBackground = "background"
+	effectGroupName       = "name"
+	effectGroupExtra      = "extra"
+
 	maxLinks             = 10
 	maxLinkURLLength     = 300
 	recentPostsOnPage    = 5
@@ -176,18 +196,21 @@ func validateSettings(s *dto.PageSettings) error {
 	if s.Effects == nil {
 		s.Effects = []string{}
 	}
-	if len(s.Effects) > maxEffects {
-		return invalidSettings("at most %d effects", maxEffects)
-	}
 	seen := map[string]struct{}{}
+	perGroup := map[string]int{}
 	for _, e := range s.Effects {
-		if _, ok := allowedEffects[e]; !ok {
+		group, ok := effectGroups[e]
+		if !ok {
 			return invalidSettings("unknown effect %q", e)
 		}
 		if _, dup := seen[e]; dup {
 			return invalidSettings("duplicate effect %q", e)
 		}
 		seen[e] = struct{}{}
+		perGroup[group]++
+		if perGroup[group] > effectGroupLimits[group] {
+			return invalidSettings("at most %d %s effects", effectGroupLimits[group], group)
+		}
 	}
 
 	t := s.Theme

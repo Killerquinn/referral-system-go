@@ -134,3 +134,23 @@ func (r *Repository) GetWinners(ctx context.Context, offsets []int, sponsorID st
 	}
 	return winners, nil
 }
+
+// GetDailyReferralCounts returns, for the referrer ownerID, how many referrals joined on each
+// UTC day starting from `since` (inclusive). Days without referrals are missing from the result:
+// the service fills them with zeros. No rows is not an error.
+func (r *Repository) GetDailyReferralCounts(ctx context.Context, ownerID string, since time.Time) ([]dto.DailyReferralCount, error) {
+	const op = "referral-system-go/internal/features/referral/repo GetDailyReferralCounts"
+
+	rows, err := r.db.Query(ctx, GetDailyReferralCountsQuery, ownerID, since)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+	defer rows.Close()
+
+	counts, err := pgx.CollectRows(rows, pgx.RowToStructByName[dto.DailyReferralCount])
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+
+	return counts, nil
+}
