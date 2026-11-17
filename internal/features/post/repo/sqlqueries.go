@@ -24,6 +24,20 @@ const (
 	LEFT JOIN uploads av ON av.id = u.avatar_upload_id AND av.status = 'ready' AND av.bucket = 'public'
 	`
 
+	// $1 postID, $2 author_id, $3 upload_id's (array)
+	InsertMedia = `
+	INSERT INTO post_uploads (post_id, upload_id, position)
+	SELECT 
+	 $1::uuid, 
+	 m.id, 
+	 m.ord - 1 
+	FROM unnest($3::uuid[]) WITH ORDINALITY AS m(id, ord)
+	JOIN uploads u ON u.id = m.id 
+	AND u.owner_id = $2
+	 AND u.status = 'ready'
+	  AND u.purpose = 'post_media'
+	`
+
 	// $1 post_id
 	SelectPostByID = `
 	SELECT
