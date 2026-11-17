@@ -101,6 +101,10 @@ func (ph *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 
 	item, err := ph.pService.CreatePost(r.Context(), userID, req)
 	if err != nil {
+		if errors.Is(err, sharederrors.ErrInvalidMedia) {
+			responseReturn(w, http.StatusBadRequest, dto.CreatePostResponse{Message: "invalid media"})
+			return
+		}
 		responseReturn(w, http.StatusInternalServerError, dto.CreatePostResponse{})
 		return
 	}

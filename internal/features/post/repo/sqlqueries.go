@@ -38,6 +38,23 @@ const (
 	  AND u.purpose = 'post_media'
 	`
 
+	ReadMedia = `
+	SELECT
+	 pu.post_id,              --PostID
+  	 pu.upload_id,            --UploadID
+ 	 pu.position,             --Position
+  	 u.media_type,            --media.Row.MediaType
+  	 u.storage_key,           --StorageKey
+ 	 u.variants->>'thumb',    --ThumbKey
+  	 u.blurhash,              --Blurhash
+  	 u.width,                 --Width
+  	 u.height                 --Height
+	FROM post_uploads pu
+	JOIN uploads u ON u.id = pu.upload_id AND u.status = 'ready'
+	WHERE pu.post_id = ANY($1::uuid[])
+	ORDER BY pu.post_id, pu.position
+	`
+
 	// $1 post_id
 	SelectPostByID = `
 	SELECT

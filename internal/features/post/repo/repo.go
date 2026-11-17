@@ -20,12 +20,18 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-func (r *Repository) CreatePost(ctx context.Context, authorID, title, body string) (dto.PostItem, error) {
+func (r *Repository) CreatePost(ctx context.Context, authorID, title, body string, mediaIDs []string) (dto.PostItem, error) {
 	const op = "internal/features/post/repo CreatePost"
 
 	var postItem dto.PostItem
 
-	if err := r.db.QueryRow(ctx, InsertPost, authorID, title, body).Scan(
+	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return dto.PostItem{}, fmt.Errorf("%s:%w", op, err)
+	}
+	defer tx.Rollback(ctx)
+
+	if err := tx.QueryRow(ctx, InsertPost, authorID, title, body).Scan(
 		&postItem.ID,
 		&postItem.AuthorID,
 		&postItem.AuthorUsername,
@@ -40,7 +46,47 @@ func (r *Repository) CreatePost(ctx context.Context, authorID, title, body strin
 		return dto.PostItem{}, fmt.Errorf("%s:%w", op, err)
 	}
 
+	if len(mediaIDs) > 0 {
+		res, err := tx.Exec(ctx, InsertMedia, postItem.ID, authorID, mediaIDs)
+		if err != nil {
+			return dto.PostItem{}, fmt.Errorf("%s:%w", op, err)
+		}
+		if res.RowsAffected() != int64(len(mediaIDs)) {
+			return dto.PostItem{}, sharederrors.ErrInvalidMedia
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return dto.PostItem{}, fmt.Errorf("%s:%w", op, err)
+	}
+
 	return postItem, nil
+}
+
+func (r *Repository) LoadMedia(ctx context.Context, postIDs []string) (map[string][]dto.PostMediaRow, error) {
+	const op = "internal/features/post/repo LoadMedia"
+
+	if len(postIDs) == 0 {
+		return map[string][]dto.PostMediaRow{}, nil
+	}
+
+	rows, err := r.db.Query(ctx, ReadMedia, postIDs)
+	if err != nil {
+		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+	defer rows.Close()
+
+	list, err := pgx.CollectRows(rows, pgx.RowToStructByPos[dto.PostMediaRow])
+	if err != nil {
+		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+
+	res := make(map[string][]dto.PostMediaRow)
+	for _, mediaUnit := range list {
+		res[mediaUnit.PostID] = append(res[mediaUnit.PostID], mediaUnit)
+	}
+
+	return res, nil
 }
 
 func (r *Repository) GetPostByID(ctx context.Context, postID string) (dto.PostItem, error) {

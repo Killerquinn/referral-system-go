@@ -15,7 +15,7 @@ import (
 )
 
 type postStorage interface {
-	CreatePost(ctx context.Context, authorID, title, body string) (dto.PostItem, error)
+	CreatePost(ctx context.Context, authorID, title, body string, mediaIDs []string) (dto.PostItem, error)
 	GetPostByID(ctx context.Context, postID string) (dto.PostItem, error)
 	UpdatePost(ctx context.Context, postID, authorID string, title, body *string) error
 	DeletePost(ctx context.Context, postID, authorID string) error
@@ -23,6 +23,7 @@ type postStorage interface {
 	GetPostsByAuthorUsername(ctx context.Context, username string, cursor *time.Time, lastID *string, limit int) ([]dto.PostItem, error)
 	CanReadPostsOf(ctx context.Context, readerID, authorUsername string) (bool, error)
 	GetFeed(ctx context.Context, callerID string, cursor *time.Time, lastPostID *string, limit int) ([]dto.PostItem, error)
+	LoadMedia(ctx context.Context, postIDs []string) (map[string][]dto.PostMediaRow, error)
 }
 
 type PostService struct {
@@ -61,7 +62,7 @@ func (ps *PostService) CreatePost(ctx context.Context, authorID string, req dto.
 		zap.String("user_id", authorID),
 	)
 
-	item, err := ps.storage.CreatePost(ctx, authorID, req.Title, req.Body)
+	item, err := ps.storage.CreatePost(ctx, authorID, req.Title, req.Body, req.Media)
 	if err != nil {
 		log.Error("error", zap.Error(err))
 		return dto.PostItem{}, fmt.Errorf("%s:%w", op, err)

@@ -31,6 +31,13 @@ type (
 		media.File
 	}
 
+	PostMediaRow struct {
+		PostID   string
+		UploadID string
+		Pos      int
+		media.Row
+	}
+
 	// ===== create =====
 
 	CreatePostRequest struct {
