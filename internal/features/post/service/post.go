@@ -32,6 +32,8 @@ type PostService struct {
 	urls    media.URLBuilder // nil when R2 is disabled -> no avatar URLs
 }
 
+const ()
+
 func New(log *zap.Logger, baseurl string, storage postStorage, urls media.URLBuilder) *PostService {
 	return &PostService{
 		log:     log,

@@ -43,4 +43,6 @@ var (
 	ErrStorageQuotaExceeded              = errors.New("storage quota exceeded")
 	ErrTooManyPendingUploads             = errors.New("too many unfinished uploads, try again later")
 	ErrStorageUnavailable                = errors.New("file storage is unavailable")
+	ErrInvalidMedia                      = errors.New("invalid media file")
+	ErrDuplicatedMedia                   = errors.New("duplicated media file")
 )

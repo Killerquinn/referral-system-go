@@ -47,10 +47,11 @@ Routes (registered inside the AuthMiddleware group in rest/chi.go):
 */
 
 const (
-	defaultLimit   = 20
-	maxLimit       = 100
-	maxTitleLength = 200
-	maxBodyLength  = 10000
+	defaultLimit     = 20
+	maxLimit         = 100
+	maxTitleLength   = 200
+	maxBodyLength    = 10000
+	maxMediaQuantity = 10
 )
 
 func (ph *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
@@ -71,6 +72,23 @@ func (ph *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 
 	if len(req.Body) > maxBodyLength {
 		responseReturn(w, http.StatusBadRequest, dto.CreatePostResponse{})
+		return
+	}
+	if len(req.Media) > maxMediaQuantity {
+		responseReturn(w, http.StatusBadRequest, dto.CreatePostResponse{})
+		return
+	}
+
+	if err := checkMedia(req); err != nil {
+		if errors.Is(err, sharederrors.ErrInvalidMedia) {
+			responseReturn(w, http.StatusBadRequest, dto.CreatePostResponse{})
+			return
+		}
+		if errors.Is(err, sharederrors.ErrDuplicatedMedia) {
+			responseReturn(w, http.StatusForbidden, dto.CreatePostResponse{}) //todo:change status code
+			return
+		}
+		responseReturn(w, http.StatusInternalServerError, dto.CreatePostRequest{})
 		return
 	}
 
@@ -348,4 +366,21 @@ func parseLimit(limitStr string) int {
 	}
 
 	return limit
+}
+
+func checkMedia(req dto.CreatePostRequest) error {
+	media := req.Media
+
+	seen := make(map[uuid.UUID]struct{}, len(media))
+	for _, raw := range media {
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			return sharederrors.ErrInvalidMedia
+		}
+		if _, dup := seen[id]; dup {
+			return sharederrors.ErrDuplicatedMedia
+		}
+		seen[id] = struct{}{}
+	}
+	return nil
 }
