@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 	"uuid"
 
 	"github.com/go-chi/chi/v5"
@@ -70,22 +71,28 @@ func (ph *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(req.Body) > maxBodyLength {
+	if utf8.RuneCountInString(req.Body) > maxBodyLength || strings.TrimSpace(req.Body) == "" {
 		responseReturn(w, http.StatusBadRequest, dto.CreatePostResponse{})
 		return
 	}
+
+	if utf8.RuneCountInString(req.Title) > maxTitleLength || strings.TrimSpace(req.Title) == "" {
+		responseReturn(w, http.StatusBadRequest, dto.CreatePostResponse{})
+		return
+	}
+
 	if len(req.Media) > maxMediaQuantity {
 		responseReturn(w, http.StatusBadRequest, dto.CreatePostResponse{})
 		return
 	}
 
-	if err := checkMedia(req); err != nil {
+	if err := checkMedia(req.Media); err != nil {
 		if errors.Is(err, sharederrors.ErrInvalidMedia) {
-			responseReturn(w, http.StatusBadRequest, dto.CreatePostResponse{})
+			responseReturn(w, http.StatusBadRequest, dto.CreatePostResponse{Message: "invalid media id"})
 			return
 		}
 		if errors.Is(err, sharederrors.ErrDuplicatedMedia) {
-			responseReturn(w, http.StatusForbidden, dto.CreatePostResponse{}) //todo:change status code
+			responseReturn(w, http.StatusBadRequest, dto.CreatePostResponse{Message: "media is duplicated"}) //todo:change status code
 			return
 		}
 		responseReturn(w, http.StatusInternalServerError, dto.CreatePostRequest{})
@@ -170,9 +177,28 @@ func (ph *PostHandler) UpdatePost(w http.ResponseWriter, r *http.Request) {
 		responseReturn(w, http.StatusBadRequest, dto.UpdatePostResponse{})
 		return
 	}
-	if req.Body != nil {
-		if len(*req.Body) > maxBodyLength {
-			responseReturn(w, http.StatusBadRequest, dto.UpdatePostResponse{})
+
+	if req.Body != nil && len(*req.Body) > maxBodyLength && *req.Body == "" {
+		responseReturn(w, http.StatusBadRequest, dto.UpdatePostResponse{})
+		return
+	}
+
+	if req.Title != nil && utf8.RuneCountInString(*req.Title) > maxTitleLength && *req.Title == "" {
+		responseReturn(w, http.StatusBadRequest, dto.UpdatePostResponse{})
+		return
+	}
+
+	if req.Media != nil {
+		if err := checkMedia(*req.Media); err != nil {
+			if errors.Is(err, sharederrors.ErrInvalidMedia) {
+				responseReturn(w, http.StatusBadRequest, dto.CreatePostResponse{Message: "invalid media id"})
+				return
+			}
+			if errors.Is(err, sharederrors.ErrDuplicatedMedia) {
+				responseReturn(w, http.StatusBadRequest, dto.CreatePostResponse{Message: "media is duplicated"}) //todo:change status code
+				return
+			}
+			responseReturn(w, http.StatusInternalServerError, dto.CreatePostRequest{})
 			return
 		}
 	}
@@ -368,8 +394,8 @@ func parseLimit(limitStr string) int {
 	return limit
 }
 
-func checkMedia(req dto.CreatePostRequest) error {
-	media := req.Media
+func checkMedia(req []string) error {
+	media := req
 
 	seen := make(map[uuid.UUID]struct{}, len(media))
 	for _, raw := range media {
