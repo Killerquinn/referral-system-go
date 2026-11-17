@@ -23,11 +23,32 @@ const (
 	CheckOnSelfReferralAndFindReferrerID = `
 	SELECT 
     u.id AS user_id,
-    ref.id AS referrer_id,
-    ref.referred_by_id AS referrer_of_referrer
+	u.referred_by_id AS current_referrer,
+    ref.id AS referrer_id
 	FROM users u
-	LEFT JOIN users ref ON ref.own_referral_key = $2
+	JOIN users ref ON ref.own_referral_key = $2
 	WHERE u.id = $1
+	`
+
+	CheckReferralLoop = `
+	WITH RECURSIVE up AS (
+    SELECT id, referred_by_id, 1 AS depth
+    FROM users
+    WHERE id = $1                      -- старт: новый реферер
+
+    UNION ALL
+
+    SELECT u.id, u.referred_by_id, up.depth + 1
+    FROM users u
+    JOIN up ON u.id = up.referred_by_id
+    WHERE up.depth < 100               -- защита от бесконечности
+)
+	SELECT EXISTS (SELECT 1 FROM up WHERE id = $2)
+`
+
+	ClearReferralsOnChange = `
+	DELETE FROM referrals
+	WHERE referred_user_id = $1
 	`
 
 	UpdateUsersReferrer = `

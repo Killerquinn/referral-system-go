@@ -88,26 +88,45 @@ func (r *Repository) ChangeCurrentReferrer(ctx context.Context, userID uuid.UUID
 	//checking if user doesnt tries to be referrer to himself
 	var referralID string
 	var referrerID string
-	var referrerReferredBy *string
-	if err = r.db.QueryRow(ctx, CheckOnSelfReferralAndFindReferrerID, userID, refcode).Scan(&referralID, &referrerID, &referrerReferredBy); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-
-			return sharederrors.ErrSelfReferred
-		}
-
-		return fmt.Errorf("%s:%w", op, err)
-	}
-	if referrerReferredBy != nil {
-		if referralID == *referrerReferredBy {
-			return sharederrors.ErrSelfReferred //referral loop
-		}
-	}
+	var currentReferrer *string
 
 	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return fmt.Errorf("%s:%w", op, err)
 	}
 	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(42)`); err != nil {
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	if err = tx.QueryRow(ctx, CheckOnSelfReferralAndFindReferrerID, userID, refcode).Scan(&referralID, &currentReferrer, &referrerID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+
+			return sharederrors.ErrReferrerOrReferralCodeDoesntExist
+		}
+
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	if referralID == referrerID {
+		return sharederrors.ErrSelfReferred
+	}
+
+	var loop bool
+	if err := tx.QueryRow(ctx, CheckReferralLoop, referrerID, userID).Scan(&loop); err != nil {
+		return fmt.Errorf("%s:%w", op, err)
+	}
+	if loop {
+		return sharederrors.ErrSelfReferred
+	}
+
+	if currentReferrer != nil {
+		_, err := tx.Exec(ctx, ClearReferralsOnChange, userID)
+		if err != nil {
+			return fmt.Errorf("%s:%w", op, err)
+		}
+	}
 	//log.Printf("DEBUG: $1 (referrerID)=%v, $2 (time)=%v, $3 (userID)=%v == $3 (referralID)=%v", referrerID, newTimestamp, userID, referralID)
 	//update user table && referrals table
 	result, err := tx.Exec(ctx, UpdateUsersReferrer, referrerID, newTimestamp, userID)
