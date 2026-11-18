@@ -66,7 +66,8 @@ type (
 		Media *[]string `json:"media,omitempty"`
 	}
 	UpdatePostResponse struct {
-		Message string `json:"message"`
+		Post    *PostItem `json:"post,omitempty"`
+		Message string    `json:"message"`
 	}
 
 	// ===== delete =====

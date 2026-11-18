@@ -17,7 +17,7 @@ import (
 type postStorage interface {
 	CreatePost(ctx context.Context, authorID, title, body string, mediaIDs []string) (dto.PostItem, error)
 	GetPostByID(ctx context.Context, postID string) (dto.PostItem, error)
-	UpdatePost(ctx context.Context, postID, authorID string, title, body *string) error
+	UpdatePost(ctx context.Context, postID, authorID string, title, body *string, mediaIDs *[]string) error
 	DeletePost(ctx context.Context, postID, authorID string) error
 	GetPostsByAuthorID(ctx context.Context, authorID string, cursor *time.Time, lastID *string, limit int) ([]dto.PostItem, error)
 	GetPostsByAuthorUsername(ctx context.Context, username string, cursor *time.Time, lastID *string, limit int) ([]dto.PostItem, error)
@@ -202,24 +202,43 @@ func (ps *PostService) GetPost(ctx context.Context, callerID, postID string) (dt
 	return post, err
 }
 
-func (ps *PostService) UpdatePost(ctx context.Context, authorID, postID string, req dto.UpdatePostRequest) error {
+// UpdatePost applies the changes and returns the updated post (with fresh media URLs).
+func (ps *PostService) UpdatePost(ctx context.Context, authorID, postID string, req dto.UpdatePostRequest) (dto.PostItem, error) {
 	const op = "internal/features/post/service UpdatePost"
-	// TODO
 
 	log := ps.log.With(
 		zap.String("op", op),
 		zap.String("user_id", authorID),
+		zap.String("post_id", postID),
 	)
 
-	if err := ps.storage.UpdatePost(ctx, postID, authorID, req.Title, req.Body); err != nil {
+	if err := ps.storage.UpdatePost(ctx, postID, authorID, req.Title, req.Body, req.Media); err != nil {
 		if errors.Is(err, sharederrors.ErrPostNotFound) {
-			return sharederrors.ErrPostNotFound
+			return dto.PostItem{}, sharederrors.ErrPostNotFound
 		}
-		log.Error("err", zap.Error(err))
-		return fmt.Errorf("%s:%w", op, err)
+		if errors.Is(err, sharederrors.ErrInvalidMedia) {
+			return dto.PostItem{}, sharederrors.ErrInvalidMedia
+		}
+		log.Error("unable to update post", zap.Error(err))
+		return dto.PostItem{}, fmt.Errorf("%s:%w", op, err)
 	}
 
-	return nil
+	// read it back: the caller is the author, so no access check is needed here
+	post, err := ps.storage.GetPostByID(ctx, postID)
+	if err != nil {
+		log.Error("unable to read the updated post", zap.Error(err))
+		return dto.PostItem{}, fmt.Errorf("%s:%w", op, err)
+	}
+
+	onePost := []dto.PostItem{post}
+	if err := ps.getPostsWithMedia(ctx, onePost); err != nil {
+		log.Error("unable to load media of the updated post", zap.Error(err))
+		return dto.PostItem{}, fmt.Errorf("%s:%w", op, err)
+	}
+	post = onePost[0]
+
+	post.AuthorAvatar = ps.authorAvatar(post)
+	return post, nil
 }
 
 func (ps *PostService) DeletePost(ctx context.Context, authorID, postID string) error {

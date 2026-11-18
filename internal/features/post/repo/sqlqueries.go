@@ -38,6 +38,12 @@ const (
 	  AND u.purpose = 'post_media'
 	`
 
+	// $1 post_id — unlink all attachments (before inserting the new list on update)
+	DeletePostMedia = `
+	DELETE FROM post_uploads
+	WHERE post_id = $1
+	`
+
 	ReadMedia = `
 	SELECT
 	 pu.post_id,              --PostID

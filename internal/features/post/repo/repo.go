@@ -122,15 +122,47 @@ func (r *Repository) GetPostByID(ctx context.Context, postID string) (dto.PostIt
 	return postItem, nil
 }
 
-func (r *Repository) UpdatePost(ctx context.Context, postID, authorID string, title, body *string) error {
+// UpdatePost changes title/body (nil = keep) and, when mediaIDs != nil, replaces the whole list of
+// attachments (an empty slice removes them all). Everything happens in one transaction.
+func (r *Repository) UpdatePost(ctx context.Context, postID, authorID string, title, body *string, mediaIDs *[]string) error {
 	const op = "internal/features/post/repo UpdatePost"
 
-	res, err := r.db.Exec(ctx, UpdatePostByIDAndAuthor, postID, authorID, title, body)
+	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("%s:%w", op, err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Also the ownership check: author_id is in the WHERE. The UPDATE locks the post row, so two
+	// concurrent edits of the same post run one after another instead of mixing their media lists.
+	res, err := tx.Exec(ctx, UpdatePostByIDAndAuthor, postID, authorID, title, body)
 	if err != nil {
 		return fmt.Errorf("%s:%w", op, err)
 	}
 	if res.RowsAffected() == 0 {
 		return sharederrors.ErrPostNotFound
+	}
+
+	if mediaIDs != nil {
+		// delete + insert instead of moving rows around: UNIQUE (post_id, position) would
+		// conflict on every step of a reorder
+		if _, err := tx.Exec(ctx, DeletePostMedia, postID); err != nil {
+			return fmt.Errorf("%s:%w", op, err)
+		}
+
+		if ids := *mediaIDs; len(ids) > 0 {
+			res, err := tx.Exec(ctx, InsertMedia, postID, authorID, ids)
+			if err != nil {
+				return fmt.Errorf("%s:%w", op, err)
+			}
+			if res.RowsAffected() != int64(len(ids)) {
+				return sharederrors.ErrInvalidMedia
+			}
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("%s:%w", op, err)
 	}
 
 	return nil

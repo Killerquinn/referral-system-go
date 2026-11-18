@@ -21,7 +21,7 @@ import (
 type PostService interface {
 	CreatePost(ctx context.Context, authorID string, req dto.CreatePostRequest) (dto.PostItem, error)
 	GetPost(ctx context.Context, callerID, postID string) (dto.PostItem, error)
-	UpdatePost(ctx context.Context, authorID, postID string, req dto.UpdatePostRequest) error
+	UpdatePost(ctx context.Context, authorID, postID string, req dto.UpdatePostRequest) (dto.PostItem, error)
 	DeletePost(ctx context.Context, authorID, postID string) error
 	Feed(ctx context.Context, callerID string, params dto.PostListParams) (*dto.PostListResponse, error)
 	PostsOfUser(ctx context.Context, callerID, username string, params dto.PostListParams) (*dto.PostListResponse, error)
@@ -182,42 +182,47 @@ func (ph *PostHandler) UpdatePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Body != nil && len(*req.Body) > maxBodyLength && *req.Body == "" {
-		responseReturn(w, http.StatusBadRequest, dto.UpdatePostResponse{})
+	// || — each check alone is enough to reject (with && neither could ever fire)
+	if req.Body != nil && utf8.RuneCountInString(*req.Body) > maxBodyLength {
+		responseReturn(w, http.StatusBadRequest, dto.UpdatePostResponse{Message: "body is too long"})
 		return
 	}
 
-	if req.Title != nil && utf8.RuneCountInString(*req.Title) > maxTitleLength && *req.Title == "" {
-		responseReturn(w, http.StatusBadRequest, dto.UpdatePostResponse{})
+	if req.Title != nil && (strings.TrimSpace(*req.Title) == "" || utf8.RuneCountInString(*req.Title) > maxTitleLength) {
+		responseReturn(w, http.StatusBadRequest, dto.UpdatePostResponse{Message: "title must be 1-200 characters"})
 		return
 	}
 
 	if req.Media != nil {
+		if len(*req.Media) > maxMediaQuantity {
+			responseReturn(w, http.StatusBadRequest, dto.UpdatePostResponse{Message: "too many media files"})
+			return
+		}
 		if err := checkMedia(*req.Media); err != nil {
-			if errors.Is(err, sharederrors.ErrInvalidMedia) {
-				responseReturn(w, http.StatusBadRequest, dto.CreatePostResponse{Message: "invalid media id"})
-				return
-			}
 			if errors.Is(err, sharederrors.ErrDuplicatedMedia) {
-				responseReturn(w, http.StatusBadRequest, dto.CreatePostResponse{Message: "media is duplicated"}) //todo:change status code
+				responseReturn(w, http.StatusBadRequest, dto.UpdatePostResponse{Message: "media is duplicated"})
 				return
 			}
-			responseReturn(w, http.StatusInternalServerError, dto.CreatePostRequest{})
+			responseReturn(w, http.StatusBadRequest, dto.UpdatePostResponse{Message: "invalid media id"})
 			return
 		}
 	}
 
-	err = ph.pService.UpdatePost(r.Context(), userID, trimmedPostID, req)
+	post, err := ph.pService.UpdatePost(r.Context(), userID, trimmedPostID, req)
 	if err != nil {
 		if errors.Is(err, sharederrors.ErrPostNotFound) {
 			responseReturn(w, http.StatusNotFound, dto.UpdatePostResponse{Message: "post not found"})
+			return
+		}
+		if errors.Is(err, sharederrors.ErrInvalidMedia) {
+			responseReturn(w, http.StatusBadRequest, dto.UpdatePostResponse{Message: "invalid media"})
 			return
 		}
 		responseReturn(w, http.StatusInternalServerError, dto.UpdatePostResponse{})
 		return
 	}
 
-	responseReturn(w, http.StatusOK, dto.UpdatePostResponse{Message: "post successfully updated!"})
+	responseReturn(w, http.StatusOK, dto.UpdatePostResponse{Post: &post, Message: "post successfully updated!"})
 }
 
 func (ph *PostHandler) DeletePost(w http.ResponseWriter, r *http.Request) {
