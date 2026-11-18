@@ -17,13 +17,18 @@ import (
 type postStorage interface {
 	CreatePost(ctx context.Context, authorID, title, body string, mediaIDs []string) (dto.PostItem, error)
 	GetPostByID(ctx context.Context, postID string) (dto.PostItem, error)
-	UpdatePost(ctx context.Context, postID, authorID string, title, body *string, mediaIDs *[]string) error
-	DeletePost(ctx context.Context, postID, authorID string) error
+	UpdatePost(ctx context.Context, postID, authorID string, title, body *string, mediaIDs *[]string) ([]string, error)
+	DeletePost(ctx context.Context, postID, authorID string) ([]string, error)
 	GetPostsByAuthorID(ctx context.Context, authorID string, cursor *time.Time, lastID *string, limit int) ([]dto.PostItem, error)
 	GetPostsByAuthorUsername(ctx context.Context, username string, cursor *time.Time, lastID *string, limit int) ([]dto.PostItem, error)
 	CanReadPostsOf(ctx context.Context, readerID, authorUsername string) (bool, error)
 	GetFeed(ctx context.Context, callerID string, cursor *time.Time, lastPostID *string, limit int) ([]dto.PostItem, error)
 	LoadMedia(ctx context.Context, postIDs []string) (map[string][]dto.PostMediaRow, error)
+}
+
+// uploadDeleter removes an upload completely (row, files in R2, quota). *uploadservice.UploadService.
+type uploadDeleter interface {
+	DeleteUpload(ctx context.Context, userID, uploadID string) error
 }
 
 type MediaSigner interface {
@@ -37,18 +42,49 @@ type PostService struct {
 	storage postStorage
 	urls    media.URLBuilder // nil when R2 is disabled -> no avatar URLs
 	signer  MediaSigner
+	uploads uploadDeleter
 }
 
 const ()
 
-func New(log *zap.Logger, baseurl string, storage postStorage, urls media.URLBuilder, signer MediaSigner) *PostService {
+func New(log *zap.Logger, baseurl string, storage postStorage, urls media.URLBuilder, signer MediaSigner, uploads uploadDeleter) *PostService {
 	return &PostService{
 		log:     log,
 		baseurl: baseurl,
 		storage: storage,
 		urls:    urls,
 		signer:  signer,
+		uploads: uploads,
 	}
+}
+
+// deleteUploads frees files that are no longer attached to anything. Runs after the transaction
+// committed; a failure only leaves garbage in storage, so it's logged, not returned.
+// A file still attached to another post can't be deleted (post_uploads.upload_id is ON DELETE RESTRICT).
+func (ps *PostService) deleteUploads(ctx context.Context, log *zap.Logger, authorID string, ids []string) {
+	if ps.uploads == nil {
+		return
+	}
+	for _, id := range ids {
+		if err := ps.uploads.DeleteUpload(context.WithoutCancel(ctx), authorID, id); err != nil {
+			log.Warn("unable to delete a detached post file", zap.String("upload_id", id), zap.Error(err))
+		}
+	}
+}
+
+// detached returns ids from before that are not in after.
+func detached(before []string, after []string) []string {
+	keep := make(map[string]struct{}, len(after))
+	for _, id := range after {
+		keep[id] = struct{}{}
+	}
+	var gone []string
+	for _, id := range before {
+		if _, ok := keep[id]; !ok {
+			gone = append(gone, id)
+		}
+	}
+	return gone
 }
 
 func (ps *PostService) getPostsWithMedia(ctx context.Context, items []dto.PostItem) error {
@@ -212,7 +248,8 @@ func (ps *PostService) UpdatePost(ctx context.Context, authorID, postID string, 
 		zap.String("post_id", postID),
 	)
 
-	if err := ps.storage.UpdatePost(ctx, postID, authorID, req.Title, req.Body, req.Media); err != nil {
+	previous, err := ps.storage.UpdatePost(ctx, postID, authorID, req.Title, req.Body, req.Media)
+	if err != nil {
 		if errors.Is(err, sharederrors.ErrPostNotFound) {
 			return dto.PostItem{}, sharederrors.ErrPostNotFound
 		}
@@ -221,6 +258,10 @@ func (ps *PostService) UpdatePost(ctx context.Context, authorID, postID string, 
 		}
 		log.Error("unable to update post", zap.Error(err))
 		return dto.PostItem{}, fmt.Errorf("%s:%w", op, err)
+	}
+
+	if req.Media != nil {
+		ps.deleteUploads(ctx, log, authorID, detached(previous, *req.Media))
 	}
 
 	// read it back: the caller is the author, so no access check is needed here
@@ -250,17 +291,19 @@ func (ps *PostService) DeletePost(ctx context.Context, authorID, postID string) 
 		zap.String("user_id", authorID),
 	)
 
-	err := ps.storage.DeletePost(ctx, postID, authorID)
+	uploadIDs, err := ps.storage.DeletePost(ctx, postID, authorID)
 	if err != nil {
 		if errors.Is(err, sharederrors.ErrPostNotFound) {
 			return sharederrors.ErrPostNotFound
 		}
-		log.Error("err", zap.Error(err))
+		log.Error("unable to delete post", zap.Error(err))
 
 		return fmt.Errorf("%s:%w", op, err)
 	}
 
-	return err
+	ps.deleteUploads(ctx, log, authorID, uploadIDs)
+
+	return nil
 }
 
 // Feed returns posts of the caller's current referrer.

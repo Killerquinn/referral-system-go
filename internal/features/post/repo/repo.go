@@ -124,12 +124,13 @@ func (r *Repository) GetPostByID(ctx context.Context, postID string) (dto.PostIt
 
 // UpdatePost changes title/body (nil = keep) and, when mediaIDs != nil, replaces the whole list of
 // attachments (an empty slice removes them all). Everything happens in one transaction.
-func (r *Repository) UpdatePost(ctx context.Context, postID, authorID string, title, body *string, mediaIDs *[]string) error {
+// Returns the upload ids that were attached BEFORE the change (nil when media wasn't touched).
+func (r *Repository) UpdatePost(ctx context.Context, postID, authorID string, title, body *string, mediaIDs *[]string) ([]string, error) {
 	const op = "internal/features/post/repo UpdatePost"
 
 	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return fmt.Errorf("%s:%w", op, err)
+		return nil, fmt.Errorf("%s:%w", op, err)
 	}
 	defer tx.Rollback(ctx)
 
@@ -137,49 +138,83 @@ func (r *Repository) UpdatePost(ctx context.Context, postID, authorID string, ti
 	// concurrent edits of the same post run one after another instead of mixing their media lists.
 	res, err := tx.Exec(ctx, UpdatePostByIDAndAuthor, postID, authorID, title, body)
 	if err != nil {
-		return fmt.Errorf("%s:%w", op, err)
+		return nil, fmt.Errorf("%s:%w", op, err)
 	}
 	if res.RowsAffected() == 0 {
-		return sharederrors.ErrPostNotFound
+		return nil, sharederrors.ErrPostNotFound
 	}
 
+	var previous []string
 	if mediaIDs != nil {
 		// delete + insert instead of moving rows around: UNIQUE (post_id, position) would
 		// conflict on every step of a reorder
-		if _, err := tx.Exec(ctx, DeletePostMedia, postID); err != nil {
-			return fmt.Errorf("%s:%w", op, err)
+		previous, err = unlinkMedia(ctx, tx, postID)
+		if err != nil {
+			return nil, fmt.Errorf("%s:%w", op, err)
 		}
 
 		if ids := *mediaIDs; len(ids) > 0 {
 			res, err := tx.Exec(ctx, InsertMedia, postID, authorID, ids)
 			if err != nil {
-				return fmt.Errorf("%s:%w", op, err)
+				return nil, fmt.Errorf("%s:%w", op, err)
 			}
 			if res.RowsAffected() != int64(len(ids)) {
-				return sharederrors.ErrInvalidMedia
+				return nil, sharederrors.ErrInvalidMedia
 			}
 		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("%s:%w", op, err)
+		return nil, fmt.Errorf("%s:%w", op, err)
 	}
 
-	return nil
+	return previous, nil
 }
 
-func (r *Repository) DeletePost(ctx context.Context, postID, authorID string) error {
+// unlinkMedia removes all attachment links of a post and returns the upload ids they pointed to.
+func unlinkMedia(ctx context.Context, tx pgx.Tx, postID string) ([]string, error) {
+	rows, err := tx.Query(ctx, DeletePostMedia, postID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
+}
+
+// DeletePost deletes the author's post and returns the upload ids that were attached to it,
+// so the caller can delete the files (the links themselves would go away by ON DELETE CASCADE,
+// but then we wouldn't know which files to clean up).
+func (r *Repository) DeletePost(ctx context.Context, postID, authorID string) ([]string, error) {
 	const op = "internal/features/post/repo DeletePost"
 
-	res, err := r.db.Exec(ctx, DeletePostByIDAndAuthor, postID, authorID)
+	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return fmt.Errorf("%s:%w", op, err)
+		return nil, fmt.Errorf("%s:%w", op, err)
 	}
-	if res.RowsAffected() == 0 {
-		return sharederrors.ErrPostNotFound
+	defer tx.Rollback(ctx)
+
+	// ownership check + row lock first
+	var id string
+	if err := tx.QueryRow(ctx, LockAuthorPost, postID, authorID).Scan(&id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, sharederrors.ErrPostNotFound
+		}
+		return nil, fmt.Errorf("%s:%w", op, err)
 	}
 
-	return nil
+	uploadIDs, err := unlinkMedia(ctx, tx, postID)
+	if err != nil {
+		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+
+	if _, err := tx.Exec(ctx, DeletePostByIDAndAuthor, postID, authorID); err != nil {
+		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+
+	return uploadIDs, nil
 }
 
 func (r *Repository) GetPostsByAuthorID(ctx context.Context, authorID string, cursor *time.Time, lastID *string, limit int) ([]dto.PostItem, error) {

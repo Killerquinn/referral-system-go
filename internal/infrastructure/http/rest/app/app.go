@@ -125,6 +125,7 @@ func New(logger *zap.Logger, pool *pgxpool.Pool, storage *r2.Client, port int, t
 		postrepo,
 		urls,
 		mediaSigner,
+		uploadService, // deletes files removed from a post / of a deleted post
 	)
 
 	//PAGE INTERFACES

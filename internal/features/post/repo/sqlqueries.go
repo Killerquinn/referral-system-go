@@ -38,10 +38,20 @@ const (
 	  AND u.purpose = 'post_media'
 	`
 
-	// $1 post_id — unlink all attachments (before inserting the new list on update)
+	// $1 post_id — unlink all attachments, returns what was attached (to delete files no longer used)
 	DeletePostMedia = `
 	DELETE FROM post_uploads
 	WHERE post_id = $1
+	RETURNING upload_id
+	`
+
+	// $1 post_id, $2 author_id — lock the author's post for the rest of the transaction
+	// (a concurrent edit can't attach new files between reading the list and deleting the post)
+	LockAuthorPost = `
+	SELECT id
+	FROM posts
+	WHERE id = $1 AND author_id = $2
+	FOR UPDATE
 	`
 
 	ReadMedia = `
