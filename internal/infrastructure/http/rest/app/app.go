@@ -114,11 +114,17 @@ func New(logger *zap.Logger, pool *pgxpool.Pool, storage *r2.Client, port int, t
 
 	postrepo := postrepopackage.New(pool)
 
+	var mediaSigner postservice.MediaSigner
+	if storage != nil {
+		mediaSigner = storage
+	}
+
 	postservice := postservice.New(
 		logger,
 		cfg.Options.BaseUrl,
 		postrepo,
 		urls,
+		mediaSigner,
 	)
 
 	//PAGE INTERFACES

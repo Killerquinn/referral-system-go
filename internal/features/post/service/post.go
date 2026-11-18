@@ -26,22 +26,100 @@ type postStorage interface {
 	LoadMedia(ctx context.Context, postIDs []string) (map[string][]dto.PostMediaRow, error)
 }
 
+type MediaSigner interface {
+	PrivateBucket() string
+	PresignGet(ctx context.Context, bucket, key string) (string, time.Time, error)
+}
+
 type PostService struct {
 	log     *zap.Logger
 	baseurl string
 	storage postStorage
 	urls    media.URLBuilder // nil when R2 is disabled -> no avatar URLs
+	signer  MediaSigner
 }
 
 const ()
 
-func New(log *zap.Logger, baseurl string, storage postStorage, urls media.URLBuilder) *PostService {
+func New(log *zap.Logger, baseurl string, storage postStorage, urls media.URLBuilder, signer MediaSigner) *PostService {
 	return &PostService{
 		log:     log,
 		baseurl: baseurl,
 		storage: storage,
 		urls:    urls,
+		signer:  signer,
 	}
+}
+
+func (ps *PostService) getPostsWithMedia(ctx context.Context, items []dto.PostItem) error {
+	const op = "internal/features/post/service getPostsWithMedia"
+
+	if ps.signer == nil {
+		for i := range items {
+			items[i].Media = make([]dto.PostMedia, 0)
+		}
+		return nil
+	}
+
+	indexes := make([]string, len(items))
+
+	for i := range items {
+		indexes[i] = items[i].ID
+	}
+
+	rows, err := ps.storage.LoadMedia(ctx, indexes)
+	if err != nil {
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	for i := range items {
+		list := rows[items[i].ID]
+		items[i].Media = make([]dto.PostMedia, 0, len(list))
+		for _, row := range list {
+			m, ok, err := ps.toPostMedia(ctx, row)
+			if err != nil {
+				return fmt.Errorf("%s:%w", op, err)
+			}
+			if ok {
+				items[i].Media = append(items[i].Media, m)
+			}
+		}
+	}
+	return nil
+}
+
+func (ps *PostService) toPostMedia(ctx context.Context, row dto.PostMediaRow) (dto.PostMedia, bool, error) {
+	if row.StorageKey == nil || row.MediaType == nil {
+		return dto.PostMedia{}, false, nil
+	}
+
+	bucket := ps.signer.PrivateBucket()
+
+	url, _, err := ps.signer.PresignGet(ctx, bucket, *row.StorageKey)
+	if err != nil {
+		return dto.PostMedia{}, false, err
+	}
+
+	var thumb *string
+
+	if row.ThumbKey != nil && *row.ThumbKey != "" {
+		prethumb, _, err := ps.signer.PresignGet(ctx, bucket, *row.ThumbKey)
+		if err != nil {
+			return dto.PostMedia{}, false, err
+		}
+		thumb = &prethumb
+	}
+	return dto.PostMedia{
+		UploadID: row.UploadID,
+		File: media.File{
+			MediaType: *row.MediaType,
+			URL:       url,
+			ThumbURL:  thumb,
+			Blurhash:  row.Blurhash,
+			Width:     row.Width,
+			Height:    row.Height,
+		},
+	}, true, nil
 }
 
 // authorAvatar builds the author's avatar from the joined upload columns (the thumb is enough for posts).
@@ -67,6 +145,15 @@ func (ps *PostService) CreatePost(ctx context.Context, authorID string, req dto.
 		log.Error("error", zap.Error(err))
 		return dto.PostItem{}, fmt.Errorf("%s:%w", op, err)
 	}
+
+	onePost := []dto.PostItem{item}
+
+	if err := ps.getPostsWithMedia(ctx, onePost); err != nil {
+		log.Error("error while tried to sign post with media", zap.Error(err))
+		return dto.PostItem{}, fmt.Errorf("%s:%w", op, err)
+	}
+
+	item = onePost[0]
 
 	item.AuthorAvatar = ps.authorAvatar(item)
 	return item, nil
@@ -101,6 +188,15 @@ func (ps *PostService) GetPost(ctx context.Context, callerID, postID string) (dt
 	if !able {
 		return dto.PostItem{}, sharederrors.ErrPostAccessDenied
 	}
+
+	onePost := []dto.PostItem{post}
+
+	if err := ps.getPostsWithMedia(ctx, onePost); err != nil {
+		log.Error("error while tried to sign post with media", zap.Error(err))
+		return dto.PostItem{}, fmt.Errorf("%s:%w", op, err)
+	}
+
+	post = onePost[0]
 
 	post.AuthorAvatar = ps.authorAvatar(post)
 	return post, err
@@ -234,6 +330,11 @@ func (ps *PostService) Feed(ctx context.Context, callerID string, params dto.Pos
 		})
 	}
 
+	if err := ps.getPostsWithMedia(ctx, items); err != nil {
+		log.Error("error while tried to sign post with media", zap.Error(err))
+		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+
 	return &dto.PostListResponse{
 		Items:      items,
 		NextCursor: nextCursor,
@@ -347,6 +448,11 @@ func (ps *PostService) PostsOfUser(ctx context.Context, callerID, username strin
 			CreatedAt:      e.CreatedAt,
 			UpdatedAt:      e.UpdatedAt,
 		})
+	}
+
+	if err := ps.getPostsWithMedia(ctx, items); err != nil {
+		log.Error("error while tried to sign post with media", zap.Error(err))
+		return nil, fmt.Errorf("%s:%w", op, err)
 	}
 
 	return &dto.PostListResponse{
