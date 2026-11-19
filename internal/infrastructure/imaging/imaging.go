@@ -25,9 +25,11 @@ var ErrInvalidImage = errors.New("imaging: invalid image")
 
 const (
 	// decompression-bomb guard: a tiny file can claim gigapixel dimensions
-	maxPixels = 40_000_000 // ~ 8000x5000
-	quality   = 82
-	sniffLen  = 3072
+	maxPixels         = 40_000_000 // ~ 8000x5000
+	quality           = 82
+	sniffLen          = 3072
+	maxFrames         = 300
+	maxAnimatedPixels = 100_000_000
 )
 
 // Variant sizes: longest side in px. Images are only ever shrunk, never upscaled.
@@ -79,42 +81,80 @@ func Sniff(r io.Reader) (string, io.Reader, error) {
 	return mimetype.Detect(head).String(), io.MultiReader(bytes.NewReader(head), r), nil
 }
 
-// Process decodes the image, applies EXIF rotation, strips all metadata (GPS!) and encodes
-// WebP variants plus a blurhash. Animated GIFs become a still of the first frame.
-func Process(data []byte) (*Result, error) {
+func load(data []byte, pages int) (*vips.ImageRef, error) {
 	params := vips.NewImportParams()
 	params.FailOnError.Set(true)
+	params.NumPages.Set(pages)
 
 	img, err := vips.LoadImageFromBuffer(data, params)
 	if err != nil {
 		return nil, invalid("decode", err)
 	}
-	defer img.Close()
-
-	if int64(img.Width())*int64(img.Height()) > maxPixels {
-		return nil, fmt.Errorf("%w: %dx%d is too large", ErrInvalidImage, img.Width(), img.Height())
-	}
 
 	if err := img.AutoRotate(); err != nil {
+		img.Close()
 		return nil, invalid("rotate", err)
 	}
 	if err := img.RemoveMetadata(); err != nil {
+		img.Close()
 		return nil, invalid("strip metadata", err)
 	}
 
-	res := &Result{Width: img.Width(), Height: img.Height()}
+	return img, nil
+}
+
+// Process decodes the image, applies EXIF rotation, strips all metadata (GPS!) and encodes
+// WebP variants plus a blurhash. Animated GIFs become a still of the first frame.
+func Process(data []byte) (*Result, error) {
+
+	img, err := load(data, -1)
+	if err != nil {
+		return nil, err
+	}
+
+	defer img.Close()
+	frames := img.Pages()
+	frameH := img.PageHeight()
+
+	if int64(img.Width())*int64(frameH) > maxPixels {
+		return nil, fmt.Errorf("%w: %dx%d is too large", ErrInvalidImage, img.Width(), frameH)
+	}
+
+	if int64(frames) > maxFrames {
+		return nil, fmt.Errorf("%w: %d", ErrInvalidImage, frames)
+	}
+
+	if int64(img.Width())*int64(img.Height()) > maxAnimatedPixels {
+		return nil, fmt.Errorf("%w: %dx%d is too large", ErrInvalidImage, img.Width(), img.Height())
+	}
+
+	first := img
+	if frames > 1 {
+		first, err = load(data, 1)
+		if err != nil {
+			return nil, err
+		}
+		defer first.Close()
+	}
+
+	res := &Result{Width: img.Width(), Height: img.PageHeight()}
 
 	export := vips.NewWebpExportParams()
 	export.Quality = quality
 	export.StripMetadata = true
 
 	for _, s := range sizes {
-		v, err := resized(img, s.max)
+		src := img
+		if s.name == "thumb" {
+			src = first
+		}
+
+		v, err := resized(src, s.max)
 		if err != nil {
 			return nil, invalid("resize "+s.name, err)
 		}
 		buf, _, err := v.ExportWebp(export)
-		w, h := v.Width(), v.Height()
+		w, h := v.Width(), v.PageHeight()
 		v.Close()
 		if err != nil {
 			return nil, invalid("encode "+s.name, err)
@@ -123,7 +163,7 @@ func Process(data []byte) (*Result, error) {
 	}
 
 	// blurhash from a tiny copy: the algorithm is slow on big images and doesn't need detail
-	small, err := resized(img, 32)
+	small, err := resized(first, 32)
 	if err != nil {
 		return nil, invalid("blurhash resize", err)
 	}
