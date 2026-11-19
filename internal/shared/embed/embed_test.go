@@ -30,8 +30,8 @@ func TestParse(t *testing.T) {
 		{"https://vimeo.com/channels/staffpicks/76979871", ok(Vimeo, "76979871")},
 
 		// TikTok
-		{"https://www.tiktok.com/@scout2015/video/6718335390845095173", ok(TikTok, "6718335390845095173")},
-		{"https://www.tiktok.com/@scout2015/video/6718335390845095173?is_from_webapp=1", ok(TikTok, "6718335390845095173")},
+		{"https://www.tiktok.com/@aaaa/video/6718335390845095173", ok(TikTok, "6718335390845095173")},
+		{"https://www.tiktok.com/@aaaa/video/6718335390845095173?is_from_webapp=1", ok(TikTok, "6718335390845095173")},
 
 		// Twitch
 		{"https://www.twitch.tv/videos/1234567890", ok(TwitchVideo, "1234567890")},
