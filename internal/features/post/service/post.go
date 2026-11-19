@@ -47,7 +47,9 @@ type PostService struct {
 	uploads uploadDeleter
 }
 
-const ()
+const (
+	maxEmbeds = 4
+)
 
 func New(log *zap.Logger, baseurl string, storage postStorage, urls media.URLBuilder, signer MediaSigner, uploads uploadDeleter) *PostService {
 	return &PostService{
@@ -75,7 +77,7 @@ func (ps *PostService) deleteUploads(ctx context.Context, log *zap.Logger, autho
 }
 
 func parseEmbeds(links []string) ([]vidembed.Embed, error) {
-	if len(links) > 4 {
+	if len(links) > maxEmbeds {
 		return nil, sharederrors.ErrTooManyEmbeds
 	}
 
