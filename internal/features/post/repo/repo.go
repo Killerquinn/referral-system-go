@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/killerquinn/referral-system-go/internal/features/post/dto"
+	vidembed "github.com/killerquinn/referral-system-go/internal/shared/embed"
 	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
 )
 
@@ -20,7 +21,7 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-func (r *Repository) CreatePost(ctx context.Context, authorID, title, body string, mediaIDs []string) (dto.PostItem, error) {
+func (r *Repository) CreatePost(ctx context.Context, authorID, title, body string, mediaIDs []string, embeds []vidembed.Embed) (dto.PostItem, error) {
 	const op = "internal/features/post/repo CreatePost"
 
 	var postItem dto.PostItem
@@ -54,6 +55,10 @@ func (r *Repository) CreatePost(ctx context.Context, authorID, title, body strin
 		if res.RowsAffected() != int64(len(mediaIDs)) {
 			return dto.PostItem{}, sharederrors.ErrInvalidMedia
 		}
+	}
+
+	if err := insertEmbeds(ctx, tx, postItem.ID, embeds); err != nil {
+		return dto.PostItem{}, fmt.Errorf("%s:%w", op, err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -125,7 +130,9 @@ func (r *Repository) GetPostByID(ctx context.Context, postID string) (dto.PostIt
 // UpdatePost changes title/body (nil = keep) and, when mediaIDs != nil, replaces the whole list of
 // attachments (an empty slice removes them all). Everything happens in one transaction.
 // Returns the upload ids that were attached BEFORE the change (nil when media wasn't touched).
-func (r *Repository) UpdatePost(ctx context.Context, postID, authorID string, title, body *string, mediaIDs *[]string) ([]string, error) {
+// Deletes all video embeds and replaces with new if user already has ones, or completely deletes them
+// When embeds != nil, the list of video embeds is replaced the same way (an empty slice removes them all).
+func (r *Repository) UpdatePost(ctx context.Context, postID, authorID string, title, body *string, mediaIDs *[]string, embeds *[]vidembed.Embed) ([]string, error) {
 	const op = "internal/features/post/repo UpdatePost"
 
 	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{})
@@ -164,11 +171,51 @@ func (r *Repository) UpdatePost(ctx context.Context, postID, authorID string, ti
 		}
 	}
 
+	if embeds != nil {
+		_, err := tx.Exec(ctx, DeletePostEmbeds, postID)
+		if err != nil {
+			return nil, fmt.Errorf("%s:%w", op, err)
+		}
+
+		if err := insertEmbeds(ctx, tx, postID, *embeds); err != nil {
+			return nil, fmt.Errorf("%s:%w", op, err)
+		}
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("%s:%w", op, err)
 	}
 
 	return previous, nil
+}
+
+func (r *Repository) LoadEmbeds(ctx context.Context, postIDs []string) (map[string][]vidembed.Embed, error) {
+	const op = "internal/features/post/repo LoadEmbeds"
+
+	if len(postIDs) == 0 {
+		return map[string][]vidembed.Embed{}, nil
+	}
+
+	rows, err := r.db.Query(ctx, ReadEmbeds, postIDs)
+	if err != nil {
+		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+	defer rows.Close()
+
+	res := make(map[string][]vidembed.Embed, len(postIDs))
+
+	for rows.Next() {
+		var postID string
+		var e vidembed.Embed
+		if err := rows.Scan(&postID, &e.Provider, &e.ExternalID); err != nil {
+			return nil, fmt.Errorf("%s:%w", op, err)
+		}
+		res[postID] = append(res[postID], e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+	return res, nil
 }
 
 // unlinkMedia removes all attachment links of a post and returns the upload ids they pointed to.
@@ -178,6 +225,28 @@ func unlinkMedia(ctx context.Context, tx pgx.Tx, postID string) ([]string, error
 		return nil, err
 	}
 	return pgx.CollectRows(rows, pgx.RowTo[string])
+}
+
+func insertEmbeds(ctx context.Context, tx pgx.Tx, postID string, embeds []vidembed.Embed) error {
+	const op = "internal/features/post/rep insertEmbeds"
+
+	if len(embeds) == 0 {
+		return nil
+	}
+
+	ids := make([]string, len(embeds))
+	providers := make([]string, len(embeds))
+
+	for i := range embeds {
+		ids[i] = embeds[i].ExternalID
+		providers[i] = embeds[i].Provider
+	}
+
+	if _, err := tx.Exec(ctx, InsertEmbeds, postID, providers, ids); err != nil {
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	return nil
 }
 
 // DeletePost deletes the author's post and returns the upload ids that were attached to it,

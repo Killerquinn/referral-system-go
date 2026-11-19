@@ -194,4 +194,34 @@ const (
 	LEFT JOIN users ref ON ref.id = u.referred_by_id
 	WHERE u.id = $1
 	`
+
+	//   /= = = = = = = = = = = = = = = = = = = =/  post_embeds  /= = = = = = = = = = = = = = = = = = = =/
+
+	// $1 - postID, $2 - provider(s), $3 - external_id(s)
+	InsertEmbeds = `
+		INSERT INTO post_embeds (post_id, position, provider, external_id)
+		SELECT
+		$1::uuid,
+		t.ord - 1,
+		t.provider,
+		t.external_id
+		FROM unnest($2::text[], $3::text[]) WITH ORDINALITY t(provider, external_id, ord)
+	`
+
+	// $1 - post_id
+	DeletePostEmbeds = `
+		DELETE FROM post_embeds
+		WHERE post_id = $1
+	`
+
+	// $1 - postID(s)
+	ReadEmbeds = `
+		SELECT
+		 post_id,
+		 provider,
+		 external_id
+		FROM post_embeds
+		WHERE post_id = ANY($1::uuid[])
+		ORDER BY post_id, position
+	`
 )
