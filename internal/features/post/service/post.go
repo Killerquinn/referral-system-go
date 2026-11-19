@@ -239,6 +239,11 @@ func (ps *PostService) CreatePost(ctx context.Context, authorID string, req dto.
 
 	onePost := []dto.PostItem{item}
 
+	if err := ps.attachEmbeds(ctx, onePost); err != nil {
+		log.Error("error while tried to attach embed to single post", zap.Error(err))
+		return dto.PostItem{}, fmt.Errorf("%s:%w", op, err)
+	}
+
 	if err := ps.getPostsWithMedia(ctx, onePost); err != nil {
 		log.Error("error while tried to sign post with media", zap.Error(err))
 		return dto.PostItem{}, fmt.Errorf("%s:%w", op, err)
@@ -281,6 +286,11 @@ func (ps *PostService) GetPost(ctx context.Context, callerID, postID string) (dt
 	}
 
 	onePost := []dto.PostItem{post}
+
+	if err := ps.attachEmbeds(ctx, onePost); err != nil {
+		log.Error("error while tried to attach embed to single post", zap.Error(err))
+		return dto.PostItem{}, fmt.Errorf("%s:%w", op, err)
+	}
 
 	if err := ps.getPostsWithMedia(ctx, onePost); err != nil {
 		log.Error("error while tried to sign post with media", zap.Error(err))
@@ -337,6 +347,12 @@ func (ps *PostService) UpdatePost(ctx context.Context, authorID, postID string, 
 	}
 
 	onePost := []dto.PostItem{post}
+
+	if err := ps.attachEmbeds(ctx, onePost); err != nil {
+		log.Error("error while tried to attach embed to single post", zap.Error(err))
+		return dto.PostItem{}, fmt.Errorf("%s:%w", op, err)
+	}
+
 	if err := ps.getPostsWithMedia(ctx, onePost); err != nil {
 		log.Error("unable to load media of the updated post", zap.Error(err))
 		return dto.PostItem{}, fmt.Errorf("%s:%w", op, err)
@@ -457,6 +473,11 @@ func (ps *PostService) Feed(ctx context.Context, callerID string, params dto.Pos
 		})
 	}
 
+	if err := ps.attachEmbeds(ctx, items); err != nil {
+		log.Error("error while tried to attach embed to posts", zap.Error(err))
+		return nil, fmt.Errorf("%s:%w", op, err)
+	}
+
 	if err := ps.getPostsWithMedia(ctx, items); err != nil {
 		log.Error("error while tried to sign post with media", zap.Error(err))
 		return nil, fmt.Errorf("%s:%w", op, err)
@@ -575,6 +596,11 @@ func (ps *PostService) PostsOfUser(ctx context.Context, callerID, username strin
 			CreatedAt:      e.CreatedAt,
 			UpdatedAt:      e.UpdatedAt,
 		})
+	}
+
+	if err := ps.attachEmbeds(ctx, items); err != nil {
+		log.Error("error while tried to attach embed to posts", zap.Error(err))
+		return nil, fmt.Errorf("%s:%w", op, err)
 	}
 
 	if err := ps.getPostsWithMedia(ctx, items); err != nil {
