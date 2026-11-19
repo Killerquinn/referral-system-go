@@ -81,6 +81,9 @@ func Sniff(r io.Reader) (string, io.Reader, error) {
 	return mimetype.Detect(head).String(), io.MultiReader(bytes.NewReader(head), r), nil
 }
 
+// load decodes data to pages where (-1 = all frames, 1 = first frame only)
+// also load used to delete all metadata from []data and provides EXIF rotation
+// The caller must Close() returned type *vips.ImageRef to avoid data leak. All load errors wrap ErrInvalidImage
 func load(data []byte, pages int) (*vips.ImageRef, error) {
 	params := vips.NewImportParams()
 	params.FailOnError.Set(true)
@@ -103,8 +106,11 @@ func load(data []byte, pages int) (*vips.ImageRef, error) {
 	return img, nil
 }
 
-// Process decodes the image, applies EXIF rotation, strips all metadata (GPS!) and encodes
-// WebP variants plus a blurhash. Animated GIFs become a still of the first frame.
+// Process decodes an image, applies EXIF rotation, strips all metadata (GPS!) and encodes
+// WebP variants plus a blurhash. Animations stay animated in medium and full; thumb and
+// blurhash are made from the first frame.
+// Every error wraps [ErrInvalidImage]: the input is bad, a retry won't help.
+// Startup must be called before.
 func Process(data []byte) (*Result, error) {
 
 	img, err := load(data, -1)
