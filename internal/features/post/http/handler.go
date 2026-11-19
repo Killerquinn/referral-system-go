@@ -71,7 +71,7 @@ func (ph *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if utf8.RuneCountInString(req.Body) > maxBodyLength || strings.TrimSpace(req.Body) == "" {
+	if utf8.RuneCountInString(req.Body) > maxBodyLength {
 		responseReturn(w, http.StatusBadRequest, dto.CreatePostResponse{})
 		return
 	}
@@ -101,6 +101,18 @@ func (ph *PostHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
 
 	item, err := ph.pService.CreatePost(r.Context(), userID, req)
 	if err != nil {
+		if errors.Is(err, sharederrors.ErrTooManyEmbeds) {
+			responseReturn(w, http.StatusBadRequest, dto.CreatePostResponse{Message: "too many embeds"})
+			return
+		}
+		if errors.Is(err, sharederrors.ErrDuplicatedEmbed) {
+			responseReturn(w, http.StatusBadRequest, dto.CreatePostResponse{Message: "duplicated embed"})
+			return
+		}
+		if errors.Is(err, sharederrors.ErrInvalidEmbed) {
+			responseReturn(w, http.StatusBadRequest, dto.CreatePostResponse{Message: "unsupported embed"})
+			return
+		}
 		if errors.Is(err, sharederrors.ErrInvalidMedia) {
 			responseReturn(w, http.StatusBadRequest, dto.CreatePostResponse{Message: "invalid media"})
 			return
@@ -210,6 +222,18 @@ func (ph *PostHandler) UpdatePost(w http.ResponseWriter, r *http.Request) {
 
 	post, err := ph.pService.UpdatePost(r.Context(), userID, trimmedPostID, req)
 	if err != nil {
+		if errors.Is(err, sharederrors.ErrTooManyEmbeds) {
+			responseReturn(w, http.StatusBadRequest, dto.UpdatePostResponse{Message: "too many embeds"})
+			return
+		}
+		if errors.Is(err, sharederrors.ErrDuplicatedEmbed) {
+			responseReturn(w, http.StatusBadRequest, dto.UpdatePostResponse{Message: "duplicated embed"})
+			return
+		}
+		if errors.Is(err, sharederrors.ErrInvalidEmbed) {
+			responseReturn(w, http.StatusBadRequest, dto.UpdatePostResponse{Message: "unsupported embed"})
+			return
+		}
 		if errors.Is(err, sharederrors.ErrPostNotFound) {
 			responseReturn(w, http.StatusNotFound, dto.UpdatePostResponse{Message: "post not found"})
 			return

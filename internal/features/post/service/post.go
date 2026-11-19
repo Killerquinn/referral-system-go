@@ -88,7 +88,7 @@ func parseEmbeds(links []string) ([]vidembed.Embed, error) {
 		}
 
 		if _, ok := seen[parsedLink]; ok {
-			return nil, sharederrors.ErrDublicatedEmbed
+			return nil, sharederrors.ErrDuplicatedEmbed
 		}
 		seen[parsedLink] = struct{}{}
 		parsedLinks[i] = parsedLink

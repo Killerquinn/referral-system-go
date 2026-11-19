@@ -46,6 +46,6 @@ var (
 	ErrInvalidMedia                      = errors.New("invalid media file")
 	ErrDuplicatedMedia                   = errors.New("duplicated media file")
 	ErrInvalidEmbed                      = errors.New("err invalid embed video")
-	ErrDublicatedEmbed                   = errors.New("dublicated embed video element")
+	ErrDuplicatedEmbed                   = errors.New("dublicated embed video element")
 	ErrTooManyEmbeds                     = errors.New("too many embeds")
 )
