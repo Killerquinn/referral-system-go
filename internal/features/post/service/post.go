@@ -9,21 +9,23 @@ import (
 
 	"github.com/killerquinn/referral-system-go/internal/features/post/dto"
 	httpfeatures "github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/http-features"
+	vidembed "github.com/killerquinn/referral-system-go/internal/shared/embed"
 	"github.com/killerquinn/referral-system-go/internal/shared/media"
 	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
 	"go.uber.org/zap"
 )
 
 type postStorage interface {
-	CreatePost(ctx context.Context, authorID, title, body string, mediaIDs []string) (dto.PostItem, error)
+	CreatePost(ctx context.Context, authorID, title, body string, mediaIDs []string, embeds []vidembed.Embed) (dto.PostItem, error)
 	GetPostByID(ctx context.Context, postID string) (dto.PostItem, error)
-	UpdatePost(ctx context.Context, postID, authorID string, title, body *string, mediaIDs *[]string) ([]string, error)
+	UpdatePost(ctx context.Context, postID, authorID string, title, body *string, mediaIDs *[]string, embeds *[]vidembed.Embed) ([]string, error)
 	DeletePost(ctx context.Context, postID, authorID string) ([]string, error)
 	GetPostsByAuthorID(ctx context.Context, authorID string, cursor *time.Time, lastID *string, limit int) ([]dto.PostItem, error)
 	GetPostsByAuthorUsername(ctx context.Context, username string, cursor *time.Time, lastID *string, limit int) ([]dto.PostItem, error)
 	CanReadPostsOf(ctx context.Context, readerID, authorUsername string) (bool, error)
 	GetFeed(ctx context.Context, callerID string, cursor *time.Time, lastPostID *string, limit int) ([]dto.PostItem, error)
 	LoadMedia(ctx context.Context, postIDs []string) (map[string][]dto.PostMediaRow, error)
+	LoadEmbeds(ctx context.Context, postIDs []string) (map[string][]vidembed.Embed, error)
 }
 
 // uploadDeleter removes an upload completely (row, files in R2, quota). *uploadservice.UploadService.
@@ -70,6 +72,54 @@ func (ps *PostService) deleteUploads(ctx context.Context, log *zap.Logger, autho
 			log.Warn("unable to delete a detached post file", zap.String("upload_id", id), zap.Error(err))
 		}
 	}
+}
+
+func parseEmbeds(links []string) ([]vidembed.Embed, error) {
+	if len(links) > 4 {
+		return nil, sharederrors.ErrTooManyEmbeds
+	}
+
+	seen := map[vidembed.Embed]struct{}{}
+	parsedLinks := make([]vidembed.Embed, len(links))
+	for i, l := range links {
+		parsedLink, err := vidembed.Parse(l)
+		if err != nil {
+			return nil, sharederrors.ErrInvalidEmbed
+		}
+
+		if _, ok := seen[parsedLink]; ok {
+			return nil, sharederrors.ErrDublicatedEmbed
+		}
+		seen[parsedLink] = struct{}{}
+		parsedLinks[i] = parsedLink
+	}
+	return parsedLinks, nil
+}
+
+func (ps *PostService) attachEmbeds(ctx context.Context, items []dto.PostItem) error {
+	const op = "internal/features/post/service attachEmbeds"
+
+	if len(items) == 0 {
+		return nil
+	}
+
+	ids := make([]string, len(items))
+	for i := range items {
+		ids[i] = items[i].ID
+	}
+	m, err := ps.storage.LoadEmbeds(ctx, ids)
+	if err != nil {
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	for i := range items {
+		e := m[items[i].ID]
+		if e == nil {
+			e = make([]vidembed.Embed, 0)
+		}
+		items[i].Embeds = e
+	}
+	return nil
 }
 
 // detached returns ids from before that are not in after.
@@ -176,7 +226,12 @@ func (ps *PostService) CreatePost(ctx context.Context, authorID string, req dto.
 		zap.String("user_id", authorID),
 	)
 
-	item, err := ps.storage.CreatePost(ctx, authorID, req.Title, req.Body, req.Media)
+	parsedEmbeds, err := parseEmbeds(req.Embeds)
+	if err != nil {
+		return dto.PostItem{}, err
+	}
+
+	item, err := ps.storage.CreatePost(ctx, authorID, req.Title, req.Body, req.Media, parsedEmbeds)
 	if err != nil {
 		log.Error("error", zap.Error(err))
 		return dto.PostItem{}, fmt.Errorf("%s:%w", op, err)
@@ -248,7 +303,17 @@ func (ps *PostService) UpdatePost(ctx context.Context, authorID, postID string, 
 		zap.String("post_id", postID),
 	)
 
-	previous, err := ps.storage.UpdatePost(ctx, postID, authorID, req.Title, req.Body, req.Media)
+	var embeds *[]vidembed.Embed
+
+	if req.Embeds != nil {
+		parsedEmbeds, err := parseEmbeds(*req.Embeds)
+		if err != nil {
+			return dto.PostItem{}, err
+		}
+		embeds = &parsedEmbeds
+	}
+
+	previous, err := ps.storage.UpdatePost(ctx, postID, authorID, req.Title, req.Body, req.Media, embeds)
 	if err != nil {
 		if errors.Is(err, sharederrors.ErrPostNotFound) {
 			return dto.PostItem{}, sharederrors.ErrPostNotFound
