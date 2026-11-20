@@ -27,7 +27,7 @@ func New(db *pgxpool.Pool) *Repository {
 }
 
 func (r *Repository) User(ctx context.Context, email string) (auth.User, error) {
-	const op = "user/repo.User"
+	const op = "internal/features/auth/repo User"
 
 	rows, err := r.db.Query(ctx, getUserByEmail, email)
 	if err != nil {
@@ -47,7 +47,7 @@ func (r *Repository) User(ctx context.Context, email string) (auth.User, error) 
 }
 
 func (r *Repository) UserExists(ctx context.Context, email string) error { //To-Do: make repository shared to avoid connection collisions and else(I'm building monolith, not microservices)
-	const op = "user/repo.UserExist"
+	const op = "internal/features/auth/repo UserExist"
 
 	var isUserExist bool
 
@@ -64,7 +64,7 @@ func (r *Repository) UserExists(ctx context.Context, email string) error { //To-
 }
 
 func (r *Repository) SaveNewUser(ctx context.Context, username string, email string, password []byte) (uid string, err error) {
-	const op = "user/repo.SaveNewUser"
+	const op = "internal/features/auth/repo SaveNewUser"
 
 	var id string
 
@@ -84,7 +84,7 @@ func (r *Repository) SaveNewUser(ctx context.Context, username string, email str
 }
 
 func (r *Repository) CreateSession(ctx context.Context, userID uuid.UUID, hashedRefreshToken string, userAgent string, clientIP string, expiresAt time.Time) (refreshToken []byte, err error) {
-	const op = "user/repo.CreateSession"
+	const op = "internal/features/auth/repo CreateSession"
 
 	var rToken string
 
@@ -101,7 +101,7 @@ func (r *Repository) CreateSession(ctx context.Context, userID uuid.UUID, hashed
 // DeleteSession and DeleteAllSessions are idempotent: deleting an already
 // missing session is not an error, the client ends up logged out either way
 func (r *Repository) DeleteSession(ctx context.Context, refreshHash string) error {
-	const op = "user/repo.DeleteSession"
+	const op = "internal/features/auth/repo DeleteSession"
 
 	if _, err := r.db.Exec(ctx, dropSessionByRefreshHash, refreshHash); err != nil {
 		return fmt.Errorf("%s:%w", op, err)
@@ -110,7 +110,7 @@ func (r *Repository) DeleteSession(ctx context.Context, refreshHash string) erro
 }
 
 func (r *Repository) DeleteAllSessions(ctx context.Context, userUUID uuid.UUID) error {
-	const op = "user/repo.DeleteAllSessions"
+	const op = "internal/features/auth/repo DeleteAllSessions"
 
 	if _, err := r.db.Exec(ctx, dropAllUserSessions, userUUID); err != nil {
 		return fmt.Errorf("%s:%w", op, err)
@@ -119,7 +119,7 @@ func (r *Repository) DeleteAllSessions(ctx context.Context, userUUID uuid.UUID) 
 }
 
 func (r *Repository) RotateSession(ctx context.Context, givenRefresh string, newRefresh string, ttl time.Time, metadata dto.SessionMetadata) (userID string, err error) {
-	const op = "user/repo.RotateSession"
+	const op = "internal/features/auth/repo RotateSession"
 
 	if err := r.db.QueryRow(ctx, rotateSession, givenRefresh, newRefresh, ttl, metadata.UserAgent, metadata.ClientIP).Scan(&userID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -130,4 +130,15 @@ func (r *Repository) RotateSession(ctx context.Context, givenRefresh string, new
 	}
 
 	return userID, err
+}
+
+func (r *Repository) DeleteExpiredSessions(ctx context.Context) (int64, error) {
+	const op = "internal/features/auth/repo DeleteExpiredSessions"
+
+	res, err := r.db.Exec(ctx, deleteExpiredSessions)
+	if err != nil {
+		return 0, fmt.Errorf("%s:%w", op, err)
+	}
+
+	return res.RowsAffected(), nil
 }

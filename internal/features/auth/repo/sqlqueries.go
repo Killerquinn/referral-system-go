@@ -60,4 +60,9 @@ const (
 		AND u.id = s.user_id AND u.is_blocked IS NOT TRUE
 	RETURNING s.user_id
 	`
+
+	deleteExpiredSessions = `
+	DELETE FROM user_sessions
+	WHERE expires_at < now()
+	`
 )

@@ -36,12 +36,17 @@ type ViewsCleaner interface {
 	CleanupViewVisitors(ctx context.Context) (int, error)
 }
 
+type ExpiredSessions interface {
+	CleanupExpiredSessions(ctx context.Context) (int, error)
+}
+
 const (
-	viewsCleanupInterval     = 6 * time.Hour
-	processUploadMaxAttempts = 5
-	processUploadTimeout     = 3 * time.Minute
-	cleanupInterval          = 10 * time.Minute
-	cleanupTimeout           = 2 * time.Minute
+	viewsCleanupInterval           = 6 * time.Hour
+	expiredSessionsCleanupInterval = 12 * time.Hour
+	processUploadMaxAttempts       = 5
+	processUploadTimeout           = 3 * time.Minute
+	cleanupInterval                = 10 * time.Minute
+	cleanupTimeout                 = 2 * time.Minute
 	// libvips is CPU and memory heavy: a few at a time is plenty for now
 	maxWorkers = 2
 )
@@ -124,12 +129,35 @@ func (w *cleanupPageViewsWorker) Work(ctx context.Context, _ *river.Job[CleanupP
 	return nil
 }
 
+// ===== cleanup_expired_sessions =====
+
+type CleanupExpiredSessionsArgs struct{}
+
+func (CleanupExpiredSessionsArgs) Kind() string { return "cleanup_expired_sessions" }
+
+type cleanupExpiredSessionsWorker struct {
+	river.WorkerDefaults[CleanupExpiredSessionsArgs]
+	q *Queue
+}
+
+func (w *cleanupExpiredSessionsWorker) Work(ctx context.Context, _ *river.Job[CleanupExpiredSessionsArgs]) error {
+	n, err := w.q.sessions.CleanupExpiredSessions(ctx)
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		w.q.log.Info("expired sessions cleanup done", zap.Int("deleted", n))
+	}
+	return nil
+}
+
 // ===== client =====
 
 type Queue struct {
 	client    *river.Client[pgx.Tx]
 	processor UploadProcessor
 	views     ViewsCleaner
+	sessions  ExpiredSessions
 	log       *zap.Logger
 }
 
@@ -142,6 +170,7 @@ func New(log *zap.Logger, pool *pgxpool.Pool) (*Queue, error) {
 	river.AddWorker(workers, &processUploadWorker{q: q})
 	river.AddWorker(workers, &cleanupUploadsWorker{q: q, log: q.log})
 	river.AddWorker(workers, &cleanupPageViewsWorker{q: q})
+	river.AddWorker(workers, &cleanupExpiredSessionsWorker{q: q})
 
 	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
 		Queues:  map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: maxWorkers}},
@@ -155,6 +184,11 @@ func New(log *zap.Logger, pool *pgxpool.Pool) (*Queue, error) {
 			river.NewPeriodicJob(
 				river.PeriodicInterval(viewsCleanupInterval),
 				func() (river.JobArgs, *river.InsertOpts) { return CleanupPageViewsArgs{}, nil },
+				&river.PeriodicJobOpts{RunOnStart: true},
+			),
+			river.NewPeriodicJob(
+				river.PeriodicInterval(expiredSessionsCleanupInterval),
+				func() (river.JobArgs, *river.InsertOpts) { return CleanupExpiredSessionsArgs{}, nil },
 				&river.PeriodicJobOpts{RunOnStart: true},
 			),
 		},
@@ -172,10 +206,12 @@ func (q *Queue) SetUploadProcessor(p UploadProcessor) { q.processor = p }
 
 func (q *Queue) SetViewsCleaner(v ViewsCleaner) { q.views = v }
 
+func (q *Queue) SetSessionsCleaner(ex ExpiredSessions) { q.sessions = ex }
+
 // Start begins fetching and working jobs. Returns immediately.
 func (q *Queue) Start(ctx context.Context) error {
-	if q.processor == nil || q.views == nil {
-		return fmt.Errorf("queue: upload processor / views cleaner is not set")
+	if q.processor == nil || q.views == nil || q.sessions == nil {
+		return fmt.Errorf("queue: upload processor / views cleaner / session cleaner is not set")
 	}
 	return q.client.Start(ctx)
 }

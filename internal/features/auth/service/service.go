@@ -36,6 +36,7 @@ type sessionRegister interface {
 	DeleteSession(ctx context.Context, refreshHash string) error
 	DeleteAllSessions(ctx context.Context, userID uuid.UUID) error
 	RotateSession(ctx context.Context, givenRefresh string, usersRefresh string, ttl time.Time, metadata dto.SessionMetadata) (userID string, err error)
+	DeleteExpiredSessions(ctx context.Context) (int64, error)
 }
 
 type newUser interface {
@@ -219,4 +220,20 @@ func (auth *Auth) Refresh(ctx context.Context, rawtoken string, metadata dto.Ses
 	}
 
 	return &dto.Tokens{Access: access, Refresh: newRaw}, nil
+}
+
+func (auth *Auth) CleanupExpiredSessions(ctx context.Context) (int, error) {
+	const op = "auth/service.CleanupExpiredSessions"
+
+	log := auth.log.With(
+		zap.String("op", op),
+	)
+
+	deleted, err := auth.sRegister.DeleteExpiredSessions(ctx)
+	if err != nil {
+		log.Error("error while tried to cleanup expired sessions", zap.Error(err))
+		return 0, fmt.Errorf("%s:%w", op, err)
+	}
+
+	return int(deleted), nil
 }

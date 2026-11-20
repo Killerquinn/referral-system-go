@@ -142,6 +142,7 @@ func New(logger *zap.Logger, pool *pgxpool.Pool, storage *r2.Client, port int, t
 		[]byte(hmacsecret), // keys the daily visitor hashes of the view counter
 	)
 	jobs.SetViewsCleaner(pageService)
+	jobs.SetSessionsCleaner(authService)
 
 	app := rest.NewApp(logger, cfg, authService, userService, referralService, postservice, uploadService, pageService)
 
