@@ -35,6 +35,8 @@ type (
 		AccentColor string `json:"accent_color"` // hex
 		CardStyle   string `json:"card_style"`   // from allowedCardStyles
 		Font        string `json:"font"`         // from allowedFonts
+		Layout      string `json:"layout"`
+		LinkStyle   string `json:"link_style"`
 	}
 
 	Link struct {

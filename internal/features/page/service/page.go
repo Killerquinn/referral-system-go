@@ -81,6 +81,8 @@ var (
 	allowedBackgroundTypes = map[string]struct{}{"color": {}, "gradient": {}, "media": {}}
 	allowedCardStyles      = map[string]struct{}{"glass": {}, "solid": {}, "transparent": {}}
 	allowedFonts           = map[string]struct{}{"inter": {}, "jetbrains_mono": {}, "space_grotesk": {}, "playfair": {}}
+	allowedLayouts         = map[string]struct{}{"default": {}, "classic": {}, "minimal": {}}
+	allowedLinkStyles      = map[string]struct{}{"buttons": {}, "connections": {}, "icons": {}}
 	allowedLinkTypes       = map[string]struct{}{"telegram": {}, "discord": {}, "youtube": {}, "twitch": {}, "tiktok": {}, "instagram": {}, "github": {}, "website": {}}
 	// later: "tiers" (after the tier feature), "giveaway" (after giveaways get an API)
 	allowedBlocks = map[string]struct{}{"referral_button": {}, "referral_counter": {}, "view_counter": {}, "recent_posts": {}}
@@ -139,7 +141,7 @@ func defaultSettings() dto.PageSettings {
 			Gradient: &dto.Gradient{From: "#0f172a", To: "#4c1d95", Angle: 135},
 		},
 		Effects: []string{},
-		Theme:   dto.Theme{AccentColor: "#a78bfa", CardStyle: "glass", Font: "inter"},
+		Theme:   dto.Theme{AccentColor: "#a78bfa", CardStyle: "glass", Font: "inter", Layout: "default", LinkStyle: "buttons"},
 		Links:   []dto.Link{},
 		Blocks: []dto.Block{
 			{Type: "referral_button", Enabled: true},
@@ -222,6 +224,24 @@ func validateSettings(s *dto.PageSettings) error {
 	}
 	if _, ok := allowedFonts[t.Font]; !ok {
 		return invalidSettings("unknown font %q", t.Font)
+	}
+
+	if t.Layout == "" {
+		s.Theme.Layout = "default"
+		t.Layout = s.Theme.Layout
+	}
+
+	if _, ok := allowedLayouts[t.Layout]; !ok {
+		return invalidSettings("unknown layout %q", t.Layout)
+	}
+
+	if s.Theme.LinkStyle == "" {
+		s.Theme.LinkStyle = "buttons"
+	}
+	t.LinkStyle = s.Theme.LinkStyle
+
+	if _, ok := allowedLinkStyles[t.LinkStyle]; !ok {
+		return invalidSettings("unknown link style %q", t.LinkStyle)
 	}
 
 	if s.Links == nil {
