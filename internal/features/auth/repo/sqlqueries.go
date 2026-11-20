@@ -65,4 +65,12 @@ const (
 	DELETE FROM user_sessions
 	WHERE expires_at < now()
 	`
+
+	codeUpsert = `
+	INSERT INTO auth_codes(user_id, purpose, code_hash, expires_at)
+	VALUES ($1, $2, $3, $4)
+	ON CONFLICT (user_id, purpose) DO UPDATE
+	SET code_hash = EXCLUDED.code_hash, expires_at = EXCLUDED.expires_at, attempts = 0, created_at = now(), locked_until = NULL
+	WHERE (auth_codes.locked_until IS NULL OR auth_codes.locked_until < now()) AND auth_codes.created_at < now() - interval '60 seconds'
+	`
 )
