@@ -102,4 +102,14 @@ const (
 		locked_until = CASE WHEN attempts + 1 >= $3 THEN now() + interval '2 minutes' ELSE locked_until END
 	WHERE user_id = $1 AND purpose = $2
 	`
+
+	// AND ... IS NULL: verifying twice keeps the first timestamp
+	markEmailVerified = `
+	UPDATE users SET email_verified_at = now()
+	WHERE id = $1 AND email_verified_at IS NULL
+	`
+
+	selectEmailStatus = `
+	SELECT email, email_verified_at FROM users WHERE id = $1
+	`
 )
