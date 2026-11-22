@@ -36,8 +36,13 @@ type ViewsCleaner interface {
 	CleanupViewVisitors(ctx context.Context) (int, error)
 }
 
+// ExpiredSessions drops user sessions with expired refresh tokens. Implemented by *authservice.Auth
 type ExpiredSessions interface {
 	CleanupExpiredSessions(ctx context.Context) (int, error)
+}
+
+type MailerProcess interface {
+	SendResetCode(ctx context.Context, email, code string) error
 }
 
 const (
@@ -47,6 +52,7 @@ const (
 	processUploadTimeout           = 3 * time.Minute
 	cleanupInterval                = 10 * time.Minute
 	cleanupTimeout                 = 2 * time.Minute
+	sendResetCodeMaxAttempts       = 3
 	// libvips is CPU and memory heavy: a few at a time is plenty for now
 	maxWorkers = 2
 )
@@ -151,6 +157,34 @@ func (w *cleanupExpiredSessionsWorker) Work(ctx context.Context, _ *river.Job[Cl
 	return nil
 }
 
+// ===== send_reset_code =====
+
+type SendResetCodeArgs struct {
+	Email string `json:"email"`
+	Code  string `json:"code"`
+}
+
+func (SendResetCodeArgs) Kind() string { return "send_reset_code" }
+
+func (SendResetCodeArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{
+		MaxAttempts: sendResetCodeMaxAttempts,
+	}
+}
+
+type sendResetCodeWorker struct {
+	river.WorkerDefaults[SendResetCodeArgs]
+	q *Queue
+}
+
+func (w *sendResetCodeWorker) Work(ctx context.Context, job *river.Job[SendResetCodeArgs]) error {
+	err := w.q.mailer.SendResetCode(ctx, job.Args.Email, job.Args.Code)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 // ===== client =====
 
 type Queue struct {
@@ -158,6 +192,7 @@ type Queue struct {
 	processor UploadProcessor
 	views     ViewsCleaner
 	sessions  ExpiredSessions
+	mailer    MailerProcess
 	log       *zap.Logger
 }
 
@@ -171,6 +206,7 @@ func New(log *zap.Logger, pool *pgxpool.Pool) (*Queue, error) {
 	river.AddWorker(workers, &cleanupUploadsWorker{q: q, log: q.log})
 	river.AddWorker(workers, &cleanupPageViewsWorker{q: q})
 	river.AddWorker(workers, &cleanupExpiredSessionsWorker{q: q})
+	river.AddWorker(workers, &sendResetCodeWorker{q: q})
 
 	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
 		Queues:  map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: maxWorkers}},
@@ -208,10 +244,12 @@ func (q *Queue) SetViewsCleaner(v ViewsCleaner) { q.views = v }
 
 func (q *Queue) SetSessionsCleaner(ex ExpiredSessions) { q.sessions = ex }
 
+func (q *Queue) SetMailer(m MailerProcess) { q.mailer = m }
+
 // Start begins fetching and working jobs. Returns immediately.
 func (q *Queue) Start(ctx context.Context) error {
-	if q.processor == nil || q.views == nil || q.sessions == nil {
-		return fmt.Errorf("queue: upload processor / views cleaner / session cleaner is not set")
+	if q.processor == nil || q.views == nil || q.sessions == nil || q.mailer == nil {
+		return fmt.Errorf("queue: upload processor / views cleaner / session cleaner // mailer is not set")
 	}
 	return q.client.Start(ctx)
 }
@@ -225,6 +263,14 @@ func (q *Queue) Stop(ctx context.Context) error {
 func (q *Queue) EnqueueProcessUpload(ctx context.Context, uploadID string) error {
 	if _, err := q.client.Insert(ctx, ProcessUploadArgs{UploadID: uploadID}, nil); err != nil {
 		return fmt.Errorf("queue: enqueue process_upload: %w", err)
+	}
+	return nil
+}
+
+// EnqueueSendResetCode implements ....
+func (q *Queue) EnqueueSendResetCode(ctx context.Context, email, code string) error {
+	if _, err := q.client.Insert(ctx, SendResetCodeArgs{Email: email, Code: code}, nil); err != nil {
+		return fmt.Errorf("queue: enqueue send_reset_code: %w", err)
 	}
 	return nil
 }

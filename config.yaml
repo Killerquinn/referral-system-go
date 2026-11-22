@@ -41,6 +41,10 @@ refresh:
   hmac_secret: "supersecret xD"
   refresh_ttl: 720h #30 days
 
+code:
+  hmac_secret: ""
+  code_ttl: 15m
+
 options:
   baseurl: "http://myapp.com"
   frontend_url: "http://localhost:5173"

@@ -73,7 +73,7 @@ func main() {
 	}
 	defer imaging.Shutdown()
 
-	application, err := app.New(log, postgres.Pool, storage, cfg.Server.Port, cfg.JWT.TTL, cfg.Refresh.TTL, cfg)
+	application, err := app.New(log, postgres.Pool, storage, cfg.Server.Port, cfg.JWT.TTL, cfg.Refresh.TTL, cfg.Code.TTL, cfg)
 	if err != nil {
 		log.Error("failed to build application", zap.Error(err))
 		os.Exit(1)

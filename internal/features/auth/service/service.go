@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/killerquinn/referral-system-go/internal/domain/auth"
 	"github.com/killerquinn/referral-system-go/internal/features/auth/dto"
+	httpfeatures "github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/http-features"
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/jwt"
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/pkg/refreshtoken"
 	sharederrors "github.com/killerquinn/referral-system-go/internal/shared/shared-errors.go"
@@ -17,14 +18,18 @@ import (
 )
 
 type Auth struct {
-	log        *zap.Logger
-	jwtsecret  []byte
-	hmacsecret []byte
-	tokenTTL   time.Duration
-	refreshTTL time.Duration
-	userAuth   userAuth
-	sRegister  sessionRegister
-	newUser    newUser
+	log                     *zap.Logger
+	jwtsecret               []byte
+	hmacsecret              []byte
+	codehmacsecret          []byte
+	tokenTTL                time.Duration
+	refreshTTL              time.Duration
+	codeTTL                 time.Duration
+	userAuth                userAuth
+	sRegister               sessionRegister
+	newUser                 newUser
+	passwordRecovery        passwordRecovery
+	enqueuePasswordRecovery enqueuePasswordRecovery
 }
 
 type userAuth interface {
@@ -43,27 +48,46 @@ type newUser interface {
 	User(ctx context.Context, email string) (auth.User, error) //get user
 	SaveNewUser(ctx context.Context, username string, email string, password []byte) (uid string, err error)
 }
+type passwordRecovery interface {
+	IssueCode(ctx context.Context, userID, purpose, hexHash string, expiresAt time.Time) error
+}
+type enqueuePasswordRecovery interface {
+	EnqueueSendResetCode(ctx context.Context, email, code string) error
+}
 
 func New(
 	log *zap.Logger,
 	jwtsecret []byte,
 	hmacsecret []byte,
+	codehmacsecret []byte,
 	tokenTTL time.Duration,
 	refreshTTL time.Duration,
+	codeTTL time.Duration,
 	userAuth userAuth,
 	sRegister sessionRegister,
-	nUser newUser) *Auth {
+	nUser newUser,
+	passwordRecovery passwordRecovery,
+	enqueuePasswordRecovery enqueuePasswordRecovery,
+) *Auth {
 	return &Auth{
-		log:        log,
-		jwtsecret:  jwtsecret,
-		hmacsecret: hmacsecret,
-		tokenTTL:   tokenTTL,
-		refreshTTL: refreshTTL,
-		userAuth:   userAuth,
-		sRegister:  sRegister,
-		newUser:    nUser,
+		log:                     log,
+		jwtsecret:               jwtsecret,
+		hmacsecret:              hmacsecret,
+		codehmacsecret:          codehmacsecret,
+		tokenTTL:                tokenTTL,
+		refreshTTL:              refreshTTL,
+		codeTTL:                 codeTTL,
+		userAuth:                userAuth,
+		sRegister:               sRegister,
+		newUser:                 nUser,
+		passwordRecovery:        passwordRecovery,
+		enqueuePasswordRecovery: enqueuePasswordRecovery,
 	}
 }
+
+const (
+	purposePassword = "password_recovery"
+)
 
 func (auth *Auth) RegisterUser(ctx context.Context, username string, email string, password string) (userid string, err error) {
 	const op = "auth/service.registernewuser"
@@ -236,4 +260,52 @@ func (auth *Auth) CleanupExpiredSessions(ctx context.Context) (int, error) {
 	}
 
 	return int(deleted), nil
+}
+
+func (auth *Auth) ForgotPass(ctx context.Context, email string) (err error) {
+	const op = "auth/service.ForgotPass"
+
+	log := auth.log.With(
+		zap.String("op", op),
+	)
+
+	rawCode, err := httpfeatures.GenerateCode()
+	if err != nil {
+		log.Error("err occured while feature generated code", zap.Error(err))
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	user, err := auth.newUser.User(ctx, email)
+	if err != nil {
+		if errors.Is(err, sharederrors.ErrUserNotFound) {
+			return nil
+		}
+		log.Error("err occured while feature tried to find user", zap.Error(err))
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	if user.IsBlocked {
+		return nil
+	}
+
+	userID := user.ID.String()
+
+	hashedCode := httpfeatures.HashCode(rawCode, userID, purposePassword, auth.codehmacsecret)
+
+	if err := auth.passwordRecovery.IssueCode(ctx, userID, purposePassword, hashedCode, time.Now().Add(auth.codeTTL)); err != nil {
+		if errors.Is(err, sharederrors.ErrCodeCooldown) {
+			return nil
+		}
+		log.Error("error occured while feature tried to set code", zap.Error(err))
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	//TODO: enqueue send code
+
+	if err := auth.enqueuePasswordRecovery.EnqueueSendResetCode(ctx, user.Email, rawCode); err != nil {
+		log.Error("error while tried to start EnqueueSendResetCode", zap.Error(err))
+		return nil
+	}
+
+	return nil
 }

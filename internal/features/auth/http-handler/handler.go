@@ -23,6 +23,7 @@ type AuthService interface {
 	Logout(ctx context.Context, rawRefresh string) error
 	LogoutAll(ctx context.Context, userID string) error
 	Refresh(ctx context.Context, rtokenHash string, metadata dto.SessionMetadata) (tokens *dto.Tokens, err error)
+	ForgotPass(ctx context.Context, email string) (err error)
 }
 
 type EmailLimiter interface {
@@ -45,6 +46,7 @@ func Register(r chi.Router, as AuthService, ipLimiter *localmdw.RateLimiter, ema
 	r.With(ipLimiter.ByIP).Post("/auth/login", h.UserLogIn)
 	r.Post("/auth/refresh", h.Refresh)
 	r.Post("/auth/logout", h.UserLogOut)
+	r.With(ipLimiter.ByIP).Post("/auth/forgot-password", h.ForgotPassword)
 }
 
 var (
@@ -198,6 +200,28 @@ func (h *HandlerRest) Refresh(w http.ResponseWriter, r *http.Request) {
 	resp := tokens
 
 	responseReturn(w, http.StatusOK, resp)
+}
+
+func (h *HandlerRest) ForgotPassword(w http.ResponseWriter, r *http.Request) {
+	const op = "auth/http-handler ForgotPassword"
+	var req dto.ForgotPasswordRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		responseReturn(w, http.StatusBadRequest, "bad request")
+		return
+	}
+
+	if err := ValidateForgotPass(&req); err != nil {
+		responseReturn(w, http.StatusBadRequest, "bad request")
+		return
+	}
+
+	if err := h.service.ForgotPass(r.Context(), req.Email); err != nil {
+		responseReturn(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	responseReturn(w, http.StatusOK, "if an account with this email exists, a code has been sent")
 }
 
 // client IP is resolved by localmdw.ClientIPResolver; proxy headers are trusted only from configured proxies

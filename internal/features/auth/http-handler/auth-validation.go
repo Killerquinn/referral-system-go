@@ -34,6 +34,13 @@ func ValidateLogin(req *dto.LoginUserRequest) error {
 	)
 }
 
+func ValidateForgotPass(req *dto.ForgotPasswordRequest) error {
+	return ozzoval.ValidateStruct(
+		req,
+		ozzoval.Field(&req.Email, ozzoval.Required, ozzoval.By(isValidEmail)),
+	)
+}
+
 func isValidEmail(value interface{}) error {
 	email, ok := value.(string)
 	if !ok {

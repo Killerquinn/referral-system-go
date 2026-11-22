@@ -19,6 +19,7 @@ import (
 	userrepopackage "github.com/killerquinn/referral-system-go/internal/features/user/repo"
 	userservice "github.com/killerquinn/referral-system-go/internal/features/user/service"
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/http/rest"
+	"github.com/killerquinn/referral-system-go/internal/infrastructure/mailer"
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/queue"
 	"github.com/killerquinn/referral-system-go/internal/infrastructure/storage/r2"
 	"github.com/killerquinn/referral-system-go/internal/shared/media"
@@ -33,7 +34,7 @@ type App struct {
 	Queue      *queue.Queue // background jobs: started / stopped in main
 }
 
-func New(logger *zap.Logger, pool *pgxpool.Pool, storage *r2.Client, port int, tokenTTL time.Duration, refreshTTL time.Duration, cfg *config.Config) (*App, error) {
+func New(logger *zap.Logger, pool *pgxpool.Pool, storage *r2.Client, port int, tokenTTL time.Duration, refreshTTL time.Duration, codeTTL time.Duration, cfg *config.Config) (*App, error) {
 	const op = "New"
 
 	// public file URLs for avatars / page media. UNTYPED nil when R2 is disabled (see media.URLBuilder).
@@ -50,15 +51,25 @@ func New(logger *zap.Logger, pool *pgxpool.Pool, storage *r2.Client, port int, t
 
 	secret := cfg.JWT.Secret
 	hmacsecret := cfg.Refresh.HMACSecret
+	codeHMACSecret := cfg.Code.HMACSecret
+
+	jobs, err := queue.New(logger, pool)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
 
 	authService := authservice.New(logger,
 		[]byte(secret),
 		[]byte(hmacsecret),
+		[]byte(codeHMACSecret),
 		tokenTTL,
 		refreshTTL,
+		codeTTL,
 		authstorage, // userAuth interface
 		authstorage, // newUser interface
 		authstorage, // session interface
+		authstorage,
+		jobs,
 	)
 
 	//UPLOAD INTERFACES
@@ -66,11 +77,6 @@ func New(logger *zap.Logger, pool *pgxpool.Pool, storage *r2.Client, port int, t
 	logger.Info("start loading upload interfaces")
 
 	uploadrepo := uploadrepopackage.New(pool)
-
-	jobs, err := queue.New(logger, pool)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", op, err)
-	}
 
 	// storage must reach the service as an UNTYPED nil when R2 is disabled: a nil *r2.Client
 	// wrapped in the interface is != nil and the service's nil checks would pass.
@@ -143,6 +149,8 @@ func New(logger *zap.Logger, pool *pgxpool.Pool, storage *r2.Client, port int, t
 	)
 	jobs.SetViewsCleaner(pageService)
 	jobs.SetSessionsCleaner(authService)
+	// dev: codes go to the log. TODO: swap for a real provider (Resend) once there is a domain
+	jobs.SetMailer(mailer.NewLogMailer(logger))
 
 	app := rest.NewApp(logger, cfg, authService, userService, referralService, postservice, uploadService, pageService)
 

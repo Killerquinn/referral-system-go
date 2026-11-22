@@ -25,4 +25,8 @@ type (
 	RefreshRequest struct {
 		Refresh string
 	}
+
+	ForgotPasswordRequest struct {
+		Email string `json:"email"`
+	}
 )

@@ -132,10 +132,10 @@ func (r *Repository) RotateSession(ctx context.Context, givenRefresh string, new
 	return userID, err
 }
 
-func (r *Repository) UpsertCode(ctx context.Context, userID string, purpose string, hexhash string, expires_at time.Time) error {
+func (r *Repository) IssueCode(ctx context.Context, userID, purpose, hexHash string, expiresAt time.Time) error {
 	const op = "internal/features/auth/repo UpsertCode"
 
-	res, err := r.db.Exec(ctx, codeUpsert, userID, purpose, hexhash, expires_at)
+	res, err := r.db.Exec(ctx, codeUpsert, userID, purpose, hexHash, expiresAt)
 	if err != nil {
 		return fmt.Errorf("%s:%w", op, err)
 	}

@@ -25,6 +25,7 @@ type Config struct {
 	//Prometheus PrometheusConfig
 	JWT     JWTokenConfig
 	Refresh RefreshConfig
+	Code    RecoveryCodeConfig
 	Options Options
 }
 
@@ -86,6 +87,11 @@ type RefreshConfig struct {
 	TTL        time.Duration `koanf:"refresh_ttl"`
 }
 
+type RecoveryCodeConfig struct {
+	HMACSecret string        `koanf:"hmac_secret"`
+	TTL        time.Duration `koanf:"code_ttl"`
+}
+
 type Options struct {
 	BaseUrl string `koanf:"baseurl"`
 	// where the Vue app lives; used for links that open the frontend (e.g. page referral links)
@@ -120,6 +126,8 @@ func LoadConfig() *Config {
 			return "r2.access_key_id"
 		case "APP_R2_SECRET_ACCESS_KEY":
 			return "r2.secret_access_key"
+		case "APP_RECOVERY_CODE_HMAC_SECRET_KEY":
+			return "code.hmac_secret"
 		default:
 			return strings.ToLower(s)
 		}
@@ -130,6 +138,10 @@ func LoadConfig() *Config {
 	var cfg Config
 	if err := k.Unmarshal("", &cfg); err != nil {
 		log.Fatalf("Error unmarshaling config: %v", err)
+	}
+
+	if cfg.Code.HMACSecret == "" {
+		log.Fatal("APP_RECOVERY_CODE_HMAC_SECRET_KEY is not set")
 	}
 
 	if cfg.Server.Port == 0 {
