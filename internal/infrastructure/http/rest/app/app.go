@@ -68,8 +68,10 @@ func New(logger *zap.Logger, pool *pgxpool.Pool, storage *r2.Client, port int, t
 		authstorage, // userAuth interface
 		authstorage, // newUser interface
 		authstorage, // session interface
-		authstorage,
-		jobs,
+		authstorage, // passwordRecovery interface
+		jobs,        // enqueuePasswordRecovery interface
+		authstorage, // emailVerification interface
+		jobs,        // emailVerifySender interface
 	)
 
 	//UPLOAD INTERFACES

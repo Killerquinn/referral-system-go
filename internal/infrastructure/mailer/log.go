@@ -28,3 +28,12 @@ func (m *LogMailer) SendResetCode(_ context.Context, email, code string) error {
 	)
 	return nil
 }
+
+// SendVerifyCode implements queue.MailerProcess. Dev only, like SendResetCode.
+func (m *LogMailer) SendVerifyCode(_ context.Context, email, code string) error {
+	m.log.Info("DEV MAIL: email verification code",
+		zap.String("to", email),
+		zap.String("code", code),
+	)
+	return nil
+}

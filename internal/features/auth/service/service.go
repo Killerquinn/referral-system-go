@@ -30,6 +30,8 @@ type Auth struct {
 	newUser                 newUser
 	passwordRecovery        passwordRecovery
 	enqueuePasswordRecovery enqueuePasswordRecovery
+	emailVerification       emailVerification
+	emailVerifySender       emailVerifySender
 }
 
 type userAuth interface {
@@ -55,6 +57,13 @@ type passwordRecovery interface {
 type enqueuePasswordRecovery interface {
 	EnqueueSendResetCode(ctx context.Context, email, code string) error
 }
+type emailVerification interface {
+	EmailStatus(ctx context.Context, userID string) (email string, verified bool, err error)
+	VerifyEmailWithCode(ctx context.Context, userID, purpose, codeHash string, maxAttempts int) error
+}
+type emailVerifySender interface {
+	EnqueueSendVerifyCode(ctx context.Context, email, code string) error
+}
 
 func New(
 	log *zap.Logger,
@@ -69,6 +78,8 @@ func New(
 	nUser newUser,
 	passwordRecovery passwordRecovery,
 	enqueuePasswordRecovery enqueuePasswordRecovery,
+	emailVerification emailVerification,
+	emailVerifySender emailVerifySender,
 ) *Auth {
 	return &Auth{
 		log:                     log,
@@ -83,11 +94,14 @@ func New(
 		newUser:                 nUser,
 		passwordRecovery:        passwordRecovery,
 		enqueuePasswordRecovery: enqueuePasswordRecovery,
+		emailVerification:       emailVerification,
+		emailVerifySender:       emailVerifySender,
 	}
 }
 
 const (
 	purposePassword = "password_recovery"
+	purposeEmail    = "email_verify"
 	// wrong guesses before the code is burned (and new codes are locked for a while, see processAttemptQuery)
 	maxCodeAttempts = 5
 )
@@ -356,5 +370,86 @@ func (auth *Auth) ResetPassword(ctx context.Context, email, code, newPassword st
 	}
 
 	log.Info("password reset", zap.String("user_id", userID))
+	return nil
+}
+
+// SendEmailVerification mails a code to the logged-in user's address. Unlike ForgotPass the errors are honest
+// (already verified / cooldown): the caller is authenticated, there's no email to enumerate.
+func (auth *Auth) SendEmailVerification(ctx context.Context, userID string) error {
+	const op = "auth/service.SendEmailVerification"
+
+	log := auth.log.With(
+		zap.String("op", op),
+		zap.String("user_id", userID),
+	)
+
+	email, verified, err := auth.emailVerification.EmailStatus(ctx, userID)
+	if err != nil {
+		if errors.Is(err, sharederrors.ErrUserNotFound) {
+			return sharederrors.ErrUserNotFound
+		}
+		log.Error("err occured while getting email status", zap.Error(err))
+		return fmt.Errorf("%s:%w", op, err)
+	}
+	if verified {
+		return sharederrors.ErrEmailAlreadyVerified
+	}
+
+	rawCode, err := httpfeatures.GenerateCode()
+	if err != nil {
+		log.Error("err occured while generating code", zap.Error(err))
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	codeHash := httpfeatures.HashCode(rawCode, userID, purposeEmail, auth.codehmacsecret)
+
+	if err := auth.passwordRecovery.IssueCode(ctx, userID, purposeEmail, codeHash, time.Now().Add(auth.codeTTL)); err != nil {
+		if errors.Is(err, sharederrors.ErrCodeCooldown) {
+			return sharederrors.ErrCodeCooldown
+		}
+		log.Error("err occured while issuing code", zap.Error(err))
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	if err := auth.emailVerifySender.EnqueueSendVerifyCode(ctx, email, rawCode); err != nil {
+		log.Error("err occured while enqueueing verify email", zap.Error(err))
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	return nil
+}
+
+// VerifyEmail checks the code and marks the email as verified.
+func (auth *Auth) VerifyEmail(ctx context.Context, userID, code string) error {
+	const op = "auth/service.VerifyEmail"
+
+	log := auth.log.With(
+		zap.String("op", op),
+		zap.String("user_id", userID),
+	)
+
+	_, verified, err := auth.emailVerification.EmailStatus(ctx, userID)
+	if err != nil {
+		if errors.Is(err, sharederrors.ErrUserNotFound) {
+			return sharederrors.ErrUserNotFound
+		}
+		log.Error("err occured while getting email status", zap.Error(err))
+		return fmt.Errorf("%s:%w", op, err)
+	}
+	if verified {
+		return sharederrors.ErrEmailAlreadyVerified
+	}
+
+	codeHash := httpfeatures.HashCode(code, userID, purposeEmail, auth.codehmacsecret)
+
+	if err := auth.emailVerification.VerifyEmailWithCode(ctx, userID, purposeEmail, codeHash, maxCodeAttempts); err != nil {
+		if errors.Is(err, sharederrors.ErrInvalidCode) {
+			return sharederrors.ErrInvalidCode
+		}
+		log.Error("err occured while verifying email", zap.Error(err))
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	log.Info("email verified")
 	return nil
 }

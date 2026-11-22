@@ -43,6 +43,7 @@ type ExpiredSessions interface {
 
 type MailerProcess interface {
 	SendResetCode(ctx context.Context, email, code string) error
+	SendVerifyCode(ctx context.Context, email, code string) error
 }
 
 const (
@@ -185,6 +186,30 @@ func (w *sendResetCodeWorker) Work(ctx context.Context, job *river.Job[SendReset
 	return nil
 }
 
+// ===== send_verify_code =====
+
+type SendVerifyCodeArgs struct {
+	Email string `json:"email"`
+	Code  string `json:"code"`
+}
+
+func (SendVerifyCodeArgs) Kind() string { return "send_verify_code" }
+
+func (SendVerifyCodeArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{
+		MaxAttempts: sendResetCodeMaxAttempts, // same reasoning: the code expires, a late email is useless
+	}
+}
+
+type sendVerifyCodeWorker struct {
+	river.WorkerDefaults[SendVerifyCodeArgs]
+	q *Queue
+}
+
+func (w *sendVerifyCodeWorker) Work(ctx context.Context, job *river.Job[SendVerifyCodeArgs]) error {
+	return w.q.mailer.SendVerifyCode(ctx, job.Args.Email, job.Args.Code)
+}
+
 // ===== client =====
 
 type Queue struct {
@@ -207,6 +232,7 @@ func New(log *zap.Logger, pool *pgxpool.Pool) (*Queue, error) {
 	river.AddWorker(workers, &cleanupPageViewsWorker{q: q})
 	river.AddWorker(workers, &cleanupExpiredSessionsWorker{q: q})
 	river.AddWorker(workers, &sendResetCodeWorker{q: q})
+	river.AddWorker(workers, &sendVerifyCodeWorker{q: q})
 
 	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
 		Queues:  map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: maxWorkers}},
@@ -271,6 +297,14 @@ func (q *Queue) EnqueueProcessUpload(ctx context.Context, uploadID string) error
 func (q *Queue) EnqueueSendResetCode(ctx context.Context, email, code string) error {
 	if _, err := q.client.Insert(ctx, SendResetCodeArgs{Email: email, Code: code}, nil); err != nil {
 		return fmt.Errorf("queue: enqueue send_reset_code: %w", err)
+	}
+	return nil
+}
+
+// EnqueueSendVerifyCode implements authservice.emailVerifySender.
+func (q *Queue) EnqueueSendVerifyCode(ctx context.Context, email, code string) error {
+	if _, err := q.client.Insert(ctx, SendVerifyCodeArgs{Email: email, Code: code}, nil); err != nil {
+		return fmt.Errorf("queue: enqueue send_verify_code: %w", err)
 	}
 	return nil
 }

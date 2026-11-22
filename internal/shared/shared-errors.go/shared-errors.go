@@ -50,4 +50,5 @@ var (
 	ErrTooManyEmbeds                     = errors.New("too many embeds")
 	ErrCodeCooldown                      = errors.New("code cooldown not passed yet")
 	ErrInvalidCode                       = errors.New("invalid code")
+	ErrEmailAlreadyVerified              = errors.New("email is already verified")
 )
