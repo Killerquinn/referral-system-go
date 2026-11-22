@@ -2,6 +2,7 @@ package repopackage
 
 import (
 	"context"
+	"crypto/hmac"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -155,4 +156,69 @@ func (r *Repository) DeleteExpiredSessions(ctx context.Context) (int64, error) {
 	}
 
 	return res.RowsAffected(), nil
+}
+
+func (r *Repository) ResetPasswordWithCode(ctx context.Context, userID, purpose, codeHash string, newPassHash []byte, maxAttempts int) error {
+	const op = "internal/features/auth/repo ResetPasswordWithCode"
+
+	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	defer tx.Rollback(ctx)
+
+	now := time.Now()
+	var (
+		foundCodeHash string
+		foundAttempts int
+		expiresAt     time.Time
+		lockedUntil   *time.Time
+	)
+
+	if err := tx.QueryRow(ctx, selectCodeForUpdate, userID, purpose).Scan(&foundCodeHash, &expiresAt, &foundAttempts, &lockedUntil); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return sharederrors.ErrInvalidCode
+		}
+
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	if lockedUntil != nil && lockedUntil.After(now) {
+		return sharederrors.ErrInvalidCode
+	}
+
+	if !expiresAt.After(now) {
+		return sharederrors.ErrInvalidCode
+	}
+
+	if !hmac.Equal([]byte(foundCodeHash), []byte(codeHash)) {
+		_, err := tx.Exec(ctx, processAttemptQuery, userID, purpose, maxAttempts)
+		if err != nil {
+			return fmt.Errorf("%s:%w", op, err)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return fmt.Errorf("%s:%w", op, err)
+		}
+		return sharederrors.ErrInvalidCode
+	} else {
+		_, err := tx.Exec(ctx, updatePassword, userID, newPassHash)
+		if err != nil {
+			return fmt.Errorf("%s:%w", op, err)
+		}
+		_, err = tx.Exec(ctx, deleteCode, userID, purpose)
+		if err != nil {
+			return fmt.Errorf("%s:%w", op, err)
+		}
+		_, err = tx.Exec(ctx, dropAllUserSessions, userID)
+		if err != nil {
+			return fmt.Errorf("%s:%w", op, err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	return nil
 }

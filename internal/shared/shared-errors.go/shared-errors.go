@@ -49,4 +49,5 @@ var (
 	ErrDuplicatedEmbed                   = errors.New("dublicated embed video element")
 	ErrTooManyEmbeds                     = errors.New("too many embeds")
 	ErrCodeCooldown                      = errors.New("code cooldown not passed yet")
+	ErrInvalidCode                       = errors.New("invalid code")
 )

@@ -74,4 +74,32 @@ const (
 	SET code_hash = EXCLUDED.code_hash, expires_at = EXCLUDED.expires_at, attempts = 0, created_at = now(), locked_until = NULL
 	WHERE (auth_codes.locked_until IS NULL OR auth_codes.locked_until < now()) AND auth_codes.created_at < now() - interval '60 seconds'
 	`
+
+	//$1 - userID, $2 - purpose('email_verify', 'password_recovery')
+	selectCodeForUpdate = `
+	SELECT code_hash, expires_at, attempts, locked_until
+	FROM auth_codes
+	WHERE user_id = $1 AND purpose = $2
+	FOR UPDATE
+	`
+
+	//$1 - userID, $2 - hashed_password
+	updatePassword = `
+	UPDATE users
+	SET hashed_password = $2 WHERE id = $1
+	`
+
+	//$1 - userID, $2 - purpose('email_verify', 'password_recovery')
+	deleteCode = `
+	DELETE FROM auth_codes WHERE user_id = $1 AND purpose = $2
+	`
+
+	//$1 - userID, $2 - purpose('email_verify', 'password_recovery'), $3 - maxAttempts
+	processAttemptQuery = `
+	UPDATE auth_codes
+	SET attempts = attempts + 1,
+		expires_at = CASE WHEN attempts + 1 >= $3 THEN now() ELSE expires_at END,
+		locked_until = CASE WHEN attempts + 1 >= $3 THEN now() + interval '2 minutes' ELSE locked_until END
+	WHERE user_id = $1 AND purpose = $2
+	`
 )
