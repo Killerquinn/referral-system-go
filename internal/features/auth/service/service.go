@@ -137,7 +137,13 @@ func (auth *Auth) RegisterUser(ctx context.Context, username string, email strin
 		return "", fmt.Errorf("%s:%w", op, err)
 	}
 
-	return id, err
+	// best effort: the account is already created, a failed email must not fail the registration.
+	// The user can always press "resend code" later.
+	if err := auth.SendEmailVerification(ctx, id); err != nil {
+		log.Warn("failed to send verification code after register", zap.Error(err))
+	}
+
+	return id, nil
 }
 
 func (auth *Auth) Login(ctx context.Context, email string, password string, userAgent string, userIP string) (actoken string, rtoken string, err error) {
