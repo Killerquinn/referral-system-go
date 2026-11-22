@@ -25,6 +25,8 @@ type AuthService interface {
 	Refresh(ctx context.Context, rtokenHash string, metadata dto.SessionMetadata) (tokens *dto.Tokens, err error)
 	ForgotPass(ctx context.Context, email string) (err error)
 	ResetPassword(ctx context.Context, email, code, newPassword string) error
+	SendEmailVerification(ctx context.Context, userID string) error
+	VerifyEmail(ctx context.Context, userID, code string) error
 }
 
 type EmailLimiter interface {
@@ -251,6 +253,66 @@ func (h *HandlerRest) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	responseReturn(w, http.StatusOK, "password changed, please log in again")
+}
+
+// SendEmailVerification (re)sends the code to the logged-in user. Errors are honest here, see the service.
+func (h *HandlerRest) SendEmailVerification(w http.ResponseWriter, r *http.Request) {
+	userID, ok := jwtcontext.GetUserID(r.Context())
+	if !ok {
+		responseReturn(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	if err := h.service.SendEmailVerification(r.Context(), userID); err != nil {
+		switch {
+		case errors.Is(err, sharederrors.ErrEmailAlreadyVerified):
+			responseReturn(w, http.StatusConflict, "email is already verified")
+		case errors.Is(err, sharederrors.ErrCodeCooldown):
+			responseReturn(w, http.StatusTooManyRequests, "wait a minute before requesting a new code")
+		case errors.Is(err, sharederrors.ErrUserNotFound):
+			responseReturn(w, http.StatusNotFound, "user not found")
+		default:
+			responseReturn(w, http.StatusInternalServerError, "internal server error")
+		}
+		return
+	}
+
+	responseReturn(w, http.StatusOK, "verification code sent")
+}
+
+func (h *HandlerRest) VerifyEmail(w http.ResponseWriter, r *http.Request) {
+	userID, ok := jwtcontext.GetUserID(r.Context())
+	if !ok {
+		responseReturn(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	var req dto.VerifyEmailRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		responseReturn(w, http.StatusBadRequest, "bad request")
+		return
+	}
+
+	if err := ValidateVerifyEmail(&req); err != nil {
+		responseReturn(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if err := h.service.VerifyEmail(r.Context(), userID, req.Code); err != nil {
+		switch {
+		case errors.Is(err, sharederrors.ErrInvalidCode):
+			responseReturn(w, http.StatusBadRequest, "invalid or expired code")
+		case errors.Is(err, sharederrors.ErrEmailAlreadyVerified):
+			responseReturn(w, http.StatusConflict, "email is already verified")
+		case errors.Is(err, sharederrors.ErrUserNotFound):
+			responseReturn(w, http.StatusNotFound, "user not found")
+		default:
+			responseReturn(w, http.StatusInternalServerError, "internal server error")
+		}
+		return
+	}
+
+	responseReturn(w, http.StatusOK, "email verified")
 }
 
 // client IP is resolved by localmdw.ClientIPResolver; proxy headers are trusted only from configured proxies

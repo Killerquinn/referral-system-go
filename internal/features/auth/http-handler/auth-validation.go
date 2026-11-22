@@ -53,6 +53,13 @@ func ValidateResetPass(req *dto.ResetPasswordRequest) error {
 	)
 }
 
+func ValidateVerifyEmail(req *dto.VerifyEmailRequest) error {
+	return ozzoval.ValidateStruct(
+		req,
+		ozzoval.Field(&req.Code, ozzoval.Required, ozzoval.Match(reResetCode)),
+	)
+}
+
 func isValidEmail(value interface{}) error {
 	email, ok := value.(string)
 	if !ok {

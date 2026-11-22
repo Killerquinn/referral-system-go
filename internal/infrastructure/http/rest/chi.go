@@ -84,6 +84,9 @@ func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *u
 		r.Use(localmdw.AuthMiddleware(cfg.JWT.Secret))
 		//auth
 		r.Post("/auth/logout-all", newAuthHandler.UserLogOutAll)
+		// email verification: the DB cooldown (60s) and the 5-attempt lock already limit these
+		r.Post("/auth/verify-email/send", newAuthHandler.SendEmailVerification)
+		r.Post("/auth/verify-email", newAuthHandler.VerifyEmail)
 		//user
 		r.Put("/user/changepassword", newUserHandler.ChangeUserPassword)
 		r.Put("/user/changereferrer", newUserHandler.ChangeReferrer)

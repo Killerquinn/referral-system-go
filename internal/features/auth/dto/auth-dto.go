@@ -35,4 +35,8 @@ type (
 		Code        string `json:"code"`
 		NewPassword string `json:"new_password"`
 	}
+
+	VerifyEmailRequest struct {
+		Code string `json:"code"`
+	}
 )
