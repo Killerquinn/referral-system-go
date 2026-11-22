@@ -24,6 +24,7 @@ type AuthService interface {
 	LogoutAll(ctx context.Context, userID string) error
 	Refresh(ctx context.Context, rtokenHash string, metadata dto.SessionMetadata) (tokens *dto.Tokens, err error)
 	ForgotPass(ctx context.Context, email string) (err error)
+	ResetPassword(ctx context.Context, email, code, newPassword string) error
 }
 
 type EmailLimiter interface {
@@ -47,6 +48,7 @@ func Register(r chi.Router, as AuthService, ipLimiter *localmdw.RateLimiter, ema
 	r.Post("/auth/refresh", h.Refresh)
 	r.Post("/auth/logout", h.UserLogOut)
 	r.With(ipLimiter.ByIP).Post("/auth/forgot-password", h.ForgotPassword)
+	r.With(ipLimiter.ByIP).Post("/auth/reset-password", h.ResetPassword)
 }
 
 var (
@@ -222,6 +224,33 @@ func (h *HandlerRest) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	responseReturn(w, http.StatusOK, "if an account with this email exists, a code has been sent")
+}
+
+func (h *HandlerRest) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	var req dto.ResetPasswordRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		responseReturn(w, http.StatusBadRequest, "bad request")
+		return
+	}
+
+	// validation text is safe to show (e.g. "new_password: password must contain at least one digit"):
+	// it's about the request itself, not about whether the account exists
+	if err := ValidateResetPass(&req); err != nil {
+		responseReturn(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if err := h.service.ResetPassword(r.Context(), req.Email, req.Code, req.NewPassword); err != nil {
+		if errors.Is(err, sharederrors.ErrInvalidCode) {
+			responseReturn(w, http.StatusBadRequest, "invalid or expired code")
+			return
+		}
+		responseReturn(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	responseReturn(w, http.StatusOK, "password changed, please log in again")
 }
 
 // client IP is resolved by localmdw.ClientIPResolver; proxy headers are trusted only from configured proxies
