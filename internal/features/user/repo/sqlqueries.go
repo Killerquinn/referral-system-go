@@ -126,6 +126,7 @@ var (
 		ref.username AS referrer_username,
 		u.last_time_ref_used,
 		u.is_blocked,
+		u.email_verified_at IS NOT NULL AS email_verified,
 		u.created_at,
 		(SELECT MAX(us.created_at) FROM user_sessions us WHERE us.user_id = u.id) AS last_login,
 		` + media.JoinColumns("av") + `

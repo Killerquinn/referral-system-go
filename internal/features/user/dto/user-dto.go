@@ -61,6 +61,7 @@ type (
 		ReferredBy      *string     `json:"referred_by_username,omitempty"`
 		LastTimeRefUsed *time.Time  `json:"last_time_ref_used,omitempty"`
 		IsBlocked       bool        `json:"is_blocked"`
+		EmailVerified   bool        `json:"email_verified"`
 		CreatedAt       time.Time   `json:"created_at"`
 		LastLogin       time.Time   `json:"last_login,omitempty"`
 		Avatar          *media.File `json:"avatar,omitempty"`

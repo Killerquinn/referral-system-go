@@ -249,6 +249,7 @@ func (r *Repository) Self(ctx context.Context, userID string) (item dto.SelfUser
 		&item.ReferredBy,
 		&item.LastTimeRefUsed,
 		&item.IsBlocked,
+		&item.EmailVerified,
 		&item.CreatedAt,
 		&item.LastLogin,
 	}, item.AvatarRow.Targets()...)...); err != nil {
