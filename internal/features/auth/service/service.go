@@ -50,6 +50,7 @@ type newUser interface {
 }
 type passwordRecovery interface {
 	IssueCode(ctx context.Context, userID, purpose, hexHash string, expiresAt time.Time) error
+	ResetPasswordWithCode(ctx context.Context, userID, purpose, codeHash string, newPassHash []byte, maxAttempts int) error
 }
 type enqueuePasswordRecovery interface {
 	EnqueueSendResetCode(ctx context.Context, email, code string) error
@@ -87,6 +88,8 @@ func New(
 
 const (
 	purposePassword = "password_recovery"
+	// wrong guesses before the code is burned (and new codes are locked for a while, see processAttemptQuery)
+	maxCodeAttempts = 5
 )
 
 func (auth *Auth) RegisterUser(ctx context.Context, username string, email string, password string) (userid string, err error) {
@@ -307,5 +310,51 @@ func (auth *Auth) ForgotPass(ctx context.Context, email string) (err error) {
 		return nil
 	}
 
+	return nil
+}
+
+// ResetPassword checks the emailed code and sets a new password. Every "no" (unknown email, banned user,
+// no / expired / locked / wrong code) is the same ErrInvalidCode, so the response doesn't reveal which one it was.
+// On success the code is deleted and all sessions are dropped: the user logs in again with the new password.
+func (auth *Auth) ResetPassword(ctx context.Context, email, code, newPassword string) error {
+	const op = "auth/service.ResetPassword"
+
+	log := auth.log.With(
+		zap.String("op", op),
+	)
+
+	user, err := auth.newUser.User(ctx, email)
+	if err != nil {
+		if errors.Is(err, sharederrors.ErrUserNotFound) {
+			return sharederrors.ErrInvalidCode
+		}
+		log.Error("err occured while feature tried to find user", zap.Error(err))
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	if user.IsBlocked {
+		return sharederrors.ErrInvalidCode
+	}
+
+	userID := user.ID.String()
+
+	// bcrypt is slow on purpose: hash before the repo opens its transaction, so the row lock is held briefly
+	newPassHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		log.Error("err occured while hashing new password", zap.Error(err))
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	codeHash := httpfeatures.HashCode(code, userID, purposePassword, auth.codehmacsecret)
+
+	if err := auth.passwordRecovery.ResetPasswordWithCode(ctx, userID, purposePassword, codeHash, newPassHash, maxCodeAttempts); err != nil {
+		if errors.Is(err, sharederrors.ErrInvalidCode) {
+			return sharederrors.ErrInvalidCode
+		}
+		log.Error("err occured while resetting password", zap.Error(err))
+		return fmt.Errorf("%s:%w", op, err)
+	}
+
+	log.Info("password reset", zap.String("user_id", userID))
 	return nil
 }
