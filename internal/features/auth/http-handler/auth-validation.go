@@ -15,6 +15,8 @@ import (
 var (
 	reHasDigit  = regexp.MustCompile(`[0-9]`)
 	reHasLetter = regexp.MustCompile(`[a-zA-Z]`)
+	// emailed codes are exactly 6 digits (see httpfeatures.GenerateCode)
+	reResetCode = regexp.MustCompile(`^[0-9]{6}$`)
 )
 
 func ValidateNewUser(req *dto.RegisterNewUserRequest) error {
@@ -38,6 +40,16 @@ func ValidateForgotPass(req *dto.ForgotPasswordRequest) error {
 	return ozzoval.ValidateStruct(
 		req,
 		ozzoval.Field(&req.Email, ozzoval.Required, ozzoval.By(isValidEmail)),
+	)
+}
+
+// ValidateResetPass: same password rules as registration, so a reset can't set a weaker password.
+func ValidateResetPass(req *dto.ResetPasswordRequest) error {
+	return ozzoval.ValidateStruct(
+		req,
+		ozzoval.Field(&req.Email, ozzoval.Required, ozzoval.By(isValidEmail)),
+		ozzoval.Field(&req.Code, ozzoval.Required, ozzoval.Match(reResetCode)),
+		ozzoval.Field(&req.NewPassword, ozzoval.Required, ozzoval.By(validatePassword)),
 	)
 }
 
