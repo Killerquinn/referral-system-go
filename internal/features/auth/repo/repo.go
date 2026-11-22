@@ -132,10 +132,18 @@ func (r *Repository) RotateSession(ctx context.Context, givenRefresh string, new
 	return userID, err
 }
 
-func (r *Repository) UpsertCode(ctx context.Context, userID string, purpose string, hexhash string, expires_at time.Time) (int, error) {
+func (r *Repository) UpsertCode(ctx context.Context, userID string, purpose string, hexhash string, expires_at time.Time) error {
 	const op = "internal/features/auth/repo UpsertCode"
-	errUnimplementedMethod := errors.New("unimplemented")
-	return 0, errUnimplementedMethod
+
+	res, err := r.db.Exec(ctx, codeUpsert, userID, purpose, hexhash, expires_at)
+	if err != nil {
+		return fmt.Errorf("%s:%w", op, err)
+	}
+	if res.RowsAffected() < 1 {
+		return sharederrors.ErrCodeCooldown
+	}
+
+	return nil
 }
 
 func (r *Repository) DeleteExpiredSessions(ctx context.Context) (int64, error) {

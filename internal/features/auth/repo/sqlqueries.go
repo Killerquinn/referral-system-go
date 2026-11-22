@@ -66,6 +66,7 @@ const (
 	WHERE expires_at < now()
 	`
 
+	//$1 - userID, $2 - purpose('email_verify', 'password_recovery'), $3 - code_hash $4 - expires_at
 	codeUpsert = `
 	INSERT INTO auth_codes(user_id, purpose, code_hash, expires_at)
 	VALUES ($1, $2, $3, $4)
