@@ -102,12 +102,12 @@ func (r *Repository) GetReferralsByOwnUserID(ctx context.Context, ownUserID stri
 	return resp, nil
 }
 
-func (r *Repository) GetActualQuantityOfReferrers(ctx context.Context, userid string, startFrom *time.Time, endUntil *time.Time) (int, error) {
+func (r *Repository) GetActualQuantityOfReferrers(ctx context.Context, userid string, startFrom *time.Time, endUntil *time.Time, verifiedOnly bool) (int, error) {
 	const op = "referral-system-go/internal/features/referral/repo GetActualQuantityOfReferrers"
 
 	var count int
 
-	if err := r.db.QueryRow(ctx, GetQuantityOfReferrers, userid, startFrom, endUntil).Scan(&count); err != nil {
+	if err := r.db.QueryRow(ctx, GetQuantityOfReferrers, userid, startFrom, endUntil, verifiedOnly).Scan(&count); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 
 			return 0, sharederrors.ErrInsufficientQuantityOfReferrals
@@ -118,10 +118,10 @@ func (r *Repository) GetActualQuantityOfReferrers(ctx context.Context, userid st
 	return count, nil
 }
 
-func (r *Repository) GetWinners(ctx context.Context, offsets []int, sponsorID string, startFrom *time.Time, endUntil *time.Time) ([]dto.WinnersDTO, error) {
+func (r *Repository) GetWinners(ctx context.Context, offsets []int, sponsorID string, startFrom *time.Time, endUntil *time.Time, verifiedOnly bool) ([]dto.WinnersDTO, error) {
 	const op = "referral-system-go/internal/features/referral/repo GetWinners"
 
-	rows, err := r.db.Query(ctx, GetRandomUsersByOffset, offsets, sponsorID, startFrom, endUntil)
+	rows, err := r.db.Query(ctx, GetRandomUsersByOffset, offsets, sponsorID, startFrom, endUntil, verifiedOnly)
 	if err != nil {
 		return nil, fmt.Errorf("%s:%w", op, err)
 	}

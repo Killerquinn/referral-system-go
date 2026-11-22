@@ -21,7 +21,7 @@ import (
 type ReferralService interface {
 	WhoseReferralUserIs(ctx context.Context, username string) (referrer string, referrerprofileURL string, referrerSince time.Time, err error)
 	CheckCurrentReferralList(ctx context.Context, referrerID string, params dto.ReferralListParams) (*dto.CurrentReferralListResponse, error)
-	StartContest(ctx context.Context, sponsorID string, winnersQuantity int, startFrom *time.Time, endUntil *time.Time) (dto.ContestBetweenReferralsResponse, error)
+	StartContest(ctx context.Context, sponsorID string, winnersQuantity int, startFrom *time.Time, endUntil *time.Time, verifiedOnly bool) (dto.ContestBetweenReferralsResponse, error)
 	ReferralStats(ctx context.Context, ownerID string, days int) (*dto.ReferralStatsResponse, error)
 }
 
@@ -149,7 +149,7 @@ func (rh *ReferralHandler) ContestBetweenReferrals(w http.ResponseWriter, r *htt
 		return
 	}
 
-	resp, err := rh.rService.StartContest(r.Context(), sponsorID, req.WinnersQuantity, req.StartFrom, req.EndUntil)
+	resp, err := rh.rService.StartContest(r.Context(), sponsorID, req.WinnersQuantity, req.StartFrom, req.EndUntil, req.VerifiedOnly)
 	if err != nil {
 		if errors.Is(err, sharederrors.ErrInsufficientQuantityOfReferrals) {
 

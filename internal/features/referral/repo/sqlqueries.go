@@ -62,12 +62,16 @@ const (
 	WHERE username = $1
 	`
 
+	// $4 verified_only. The filters here and in GetRandomUsersByOffset MUST match:
+	// the random offsets are picked from this count.
 	GetQuantityOfReferrers = `
 	SELECT COUNT(*)
-	FROM referrals
-	WHERE referral_owner = $1
-  		AND ($2::timestamptz IS NULL OR referral_timestamp >= $2)
-  		AND ($3::timestamptz IS NULL OR referral_timestamp <= $3);
+	FROM referrals r
+	JOIN users u ON u.id = r.referred_user_id
+	WHERE r.referral_owner = $1
+  		AND ($2::timestamptz IS NULL OR r.referral_timestamp >= $2)
+  		AND ($3::timestamptz IS NULL OR r.referral_timestamp <= $3)
+  		AND (NOT $4::bool OR u.email_verified_at IS NOT NULL);
 	`
 
 	GetRandomUsersByOffset = `
@@ -86,6 +90,7 @@ const (
     WHERE r.referral_owner = $2
       AND ($3::timestamptz IS NULL OR r.referral_timestamp >= $3)
       AND ($4::timestamptz IS NULL OR r.referral_timestamp <= $4)
+      AND (NOT $5::bool OR u.email_verified_at IS NOT NULL)
     ORDER BY r.referral_timestamp ASC, r.referred_user_id ASC
     LIMIT 1 OFFSET o.offset_val
 	) w

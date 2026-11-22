@@ -16,6 +16,8 @@ type (
 		WinnersQuantity int        `json:"winners_quantity"`
 		StartFrom       *time.Time `json:"winners_became_referrals_since"`
 		EndUntil        *time.Time `json:"referrals_can_be_winners_until"`
+		// only referrals with a confirmed email take part (cheap protection against throwaway accounts)
+		VerifiedOnly bool `json:"verified_only"`
 	}
 	ContestBetweenReferralsResponse struct {
 		Winners []WinnersDTO `json:"winners"`
