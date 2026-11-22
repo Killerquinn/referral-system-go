@@ -89,7 +89,9 @@ type RefreshConfig struct {
 
 type RecoveryCodeConfig struct {
 	HMACSecret string        `koanf:"hmac_secret"`
-	TTL        time.Duration `koanf:"code_ttl"`
+	TTL        time.Duration `koanf:"code_ttl"` // password reset: the user is waiting for it right now
+	// email verification: sent on register, the user may open the email much later
+	VerifyTTL time.Duration `koanf:"verify_ttl"`
 }
 
 type Options struct {
@@ -142,6 +144,10 @@ func LoadConfig() *Config {
 
 	if cfg.Code.HMACSecret == "" {
 		log.Fatal("APP_RECOVERY_CODE_HMAC_SECRET_KEY is not set")
+	}
+
+	if cfg.Code.VerifyTTL == 0 {
+		cfg.Code.VerifyTTL = 24 * time.Hour
 	}
 
 	if cfg.Server.Port == 0 {

@@ -65,6 +65,7 @@ func New(logger *zap.Logger, pool *pgxpool.Pool, storage *r2.Client, port int, t
 		tokenTTL,
 		refreshTTL,
 		codeTTL,
+		cfg.Code.VerifyTTL,
 		authstorage, // userAuth interface
 		authstorage, // newUser interface
 		authstorage, // session interface

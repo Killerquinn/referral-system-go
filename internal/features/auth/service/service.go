@@ -25,6 +25,7 @@ type Auth struct {
 	tokenTTL                time.Duration
 	refreshTTL              time.Duration
 	codeTTL                 time.Duration
+	verifyTTL               time.Duration
 	userAuth                userAuth
 	sRegister               sessionRegister
 	newUser                 newUser
@@ -73,6 +74,7 @@ func New(
 	tokenTTL time.Duration,
 	refreshTTL time.Duration,
 	codeTTL time.Duration,
+	verifyTTL time.Duration,
 	userAuth userAuth,
 	sRegister sessionRegister,
 	nUser newUser,
@@ -89,6 +91,7 @@ func New(
 		tokenTTL:                tokenTTL,
 		refreshTTL:              refreshTTL,
 		codeTTL:                 codeTTL,
+		verifyTTL:               verifyTTL,
 		userAuth:                userAuth,
 		sRegister:               sRegister,
 		newUser:                 nUser,
@@ -409,7 +412,7 @@ func (auth *Auth) SendEmailVerification(ctx context.Context, userID string) erro
 
 	codeHash := httpfeatures.HashCode(rawCode, userID, purposeEmail, auth.codehmacsecret)
 
-	if err := auth.passwordRecovery.IssueCode(ctx, userID, purposeEmail, codeHash, time.Now().Add(auth.codeTTL)); err != nil {
+	if err := auth.passwordRecovery.IssueCode(ctx, userID, purposeEmail, codeHash, time.Now().Add(auth.verifyTTL)); err != nil {
 		if errors.Is(err, sharederrors.ErrCodeCooldown) {
 			return sharederrors.ErrCodeCooldown
 		}

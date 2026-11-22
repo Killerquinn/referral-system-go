@@ -44,6 +44,7 @@ refresh:
 code:
   hmac_secret: ""
   code_ttl: 15m
+  verify_ttl: 24h
 
 options:
   baseurl: "http://myapp.com"
