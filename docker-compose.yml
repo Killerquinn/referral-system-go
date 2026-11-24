@@ -1,0 +1,79 @@
+# Whole stack: postgres -> migrate (runs once) -> backend, plus the frontend (nginx).
+# Values come from .env next to this file (compose reads it automatically).
+#
+#   sudo docker compose up -d --build     build images and start everything
+#   sudo docker compose logs -f backend   follow backend logs
+#   sudo docker compose down              stop (data stays in the pgdata volume)
+#   sudo docker compose down -v           stop AND delete the database volume
+
+name: referral
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      # :? = refuse to start if not set, instead of running with an empty password
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-app_db}
+    volumes:
+      # named volume: the data survives container re-creation (postgres 18+ mounts the parent dir)
+      - pgdata:/var/lib/postgresql
+    ports:
+      # 127.0.0.1 only: reachable from this machine (psql, DBeaver), never from the internet
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432"
+    healthcheck:
+      # $$ = a literal $ for the shell inside the container (not compose interpolation)
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # golang-migrate: applies migrations/*.up.sql that are not applied yet, then exits.
+  # The applied version is stored in the schema_migrations table.
+  migrate:
+    image: migrate/migrate:v4.19.0
+    volumes:
+      - ./migrations:/migrations:ro
+    command:
+      - "-path=/migrations"
+      - "-database=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-app_db}?sslmode=disable"
+      - "up"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  backend:
+    build: .
+    image: referral-backend
+    restart: unless-stopped
+    # app settings and secrets (APP_*); the variables below override what .env says
+    env_file: .env
+    environment:
+      # "postgres" = the service name above; compose's network has DNS for service names
+      APP_POSTGRES_DSN: "postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-app_db}?sslmode=disable"
+      APP_CONFIG_PATH: /app/config.yaml
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-8080}:8080"
+    depends_on:
+      # start only after migrations finished with exit code 0
+      migrate:
+        condition: service_completed_successfully
+    # SIGTERM first, SIGKILL after this; the app's own shutdown timeout is 5s
+    stop_grace_period: 15s
+
+  frontend:
+    build:
+      context: ${FRONTEND_DIR:-../referral-system-go}
+      args:
+        # baked into the JS bundle at build time; change it -> rebuild (up --build)
+        VITE_API_URL: ${PUBLIC_API_URL:-http://localhost:8080}
+    image: referral-frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-5173}:80"
+
+volumes:
+  pgdata:
