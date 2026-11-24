@@ -90,15 +90,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer shutdownCancel()
 	//graceful shutdown
-
 	stop := make(chan os.Signal, 1)
 
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 
 	siginfo := <-stop
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
 
 	log.Info(fmt.Sprintf("application shutdowns on port %v, with syscall %v", cfg.Server.Port, siginfo.String()))
 
