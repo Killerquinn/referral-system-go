@@ -64,7 +64,7 @@ func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *u
 	// Deliberately does not touch the DB, so a DB blip doesn't get the container restarted.
 	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("yep, im still alive ;P "))
 	})
 
 	// separate limiters so IP and email keys never share one map
