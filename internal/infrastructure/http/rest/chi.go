@@ -53,12 +53,19 @@ func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *u
 	r.Use(localmdw.ClientIPResolver(cfg.Server.TrustedProxies))
 
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:5173"},
+		AllowedOrigins:   cfg.Server.CORSOrigins, // config: server.cors_origins / APP_CORS_ORIGINS
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
 		AllowCredentials: true,
 		MaxAge:           300,
 	}))
+
+	// liveness probe for Docker / the reverse proxy: the process is up and serving HTTP.
+	// Deliberately does not touch the DB, so a DB blip doesn't get the container restarted.
+	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
 
 	// separate limiters so IP and email keys never share one map
 	loginIPLimiter := localmdw.NewRateLimiter(rate.Every(12*time.Second), 5, 10*time.Minute)
@@ -136,10 +143,10 @@ func NewApp(log *zap.Logger, cfg *config.Config, auth *authservice.Auth, user *u
 	server := &http.Server{
 		Addr:              fmt.Sprintf(":%s", port),
 		Handler:           r,
-		ReadTimeout:       5 * time.Second,
-		ReadHeaderTimeout: 5 * time.Second,
-		IdleTimeout:       5 * time.Second,
-		WriteTimeout:      5 * time.Second,
+		ReadTimeout:       cfg.Server.ReadTimeout,
+		ReadHeaderTimeout: cfg.Server.ReadHeaderTimeout,
+		IdleTimeout:       cfg.Server.IdleTimeout,
+		WriteTimeout:      cfg.Server.WriteTimeout,
 	}
 
 	authhttphandler.Register(r, auth, loginIPLimiter, loginEmailLimiter)

@@ -9,6 +9,8 @@ server:
   # CIDRs of reverse proxies allowed to set X-Forwarded-For (e.g. ["127.0.0.1/32"] for nginx on localhost).
   # Empty = no proxy, client IP comes from the TCP connection.
   trusted_proxies: []
+  # Browser origins allowed by CORS. Empty = options.frontend_url. Env: APP_CORS_ORIGINS="https://a.com,https://b.com"
+  cors_origins: []
 
 postgres:
   dsn: "postgres://user:password@localhost:5432/referral_db?sslmode=disable"

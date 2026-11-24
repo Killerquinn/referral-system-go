@@ -40,6 +40,8 @@ type ServerConfig struct {
 	// CIDRs of reverse proxies allowed to set X-Forwarded-For.
 	// Empty = no proxy in front, client IP is taken from the TCP connection.
 	TrustedProxies []string `koanf:"trusted_proxies"`
+	// Browser origins allowed to call the API (CORS). Empty = only options.frontend_url.
+	CORSOrigins []string `koanf:"cors_origins"`
 }
 
 type PostgresConfig struct {
@@ -105,34 +107,24 @@ func LoadConfig() *Config {
 
 	_ = godotenv.Load()
 
-	configPath := findConfigFile()
+	// APP_CONFIG_PATH lets a container point at a mounted file (e.g. /app/config.yaml)
+	configPath := os.Getenv("APP_CONFIG_PATH")
+	if configPath == "" {
+		configPath = findConfigFile()
+	}
 	if err := k.Load(file.Provider(configPath), yaml.Parser()); err != nil {
 		fmt.Printf("Warning: %s not found, relying on env vars\n", configPath)
 	}
 
-	if err := k.Load(env.Provider("", ".", func(s string) string {
-		switch s {
-		case "APP_POSTGRES_DSN":
-			return "postgres.dsn"
-		case "APP_STRIPE_SECRET_KEY":
-			return "stripe.secret_key"
-		case "APP_STRIPE_WEBHOOK_SECRET":
-			return "stripe.webhook_secret"
-		case "APP_JWT_SECRET_KEY":
-			return "jwt.secret_key"
-		case "APP_HMAC_SECRET_KEY":
-			return "refresh.hmac_secret"
-		case "APP_R2_ACCOUNT_ID":
-			return "r2.account_id"
-		case "APP_R2_ACCESS_ID_S3":
-			return "r2.access_key_id"
-		case "APP_R2_SECRET_ACCESS_KEY":
-			return "r2.secret_access_key"
-		case "APP_RECOVERY_CODE_HMAC_SECRET_KEY":
-			return "code.hmac_secret"
-		default:
-			return strings.ToLower(s)
+	// list-valued settings come from env as comma-separated strings
+	listKeys := map[string]bool{"server.cors_origins": true, "server.trusted_proxies": true}
+
+	if err := k.Load(env.ProviderWithValue("", ".", func(s, value string) (string, interface{}) {
+		key := envKey(s)
+		if listKeys[key] {
+			return key, splitList(value)
 		}
+		return key, value
 	}), nil); err != nil {
 		log.Fatalf("Error loading env vars: %v", err)
 	}
@@ -159,12 +151,103 @@ func LoadConfig() *Config {
 	if cfg.Server.Name == "" {
 		cfg.Server.Name = "local_project"
 	}
+	// server timeouts: 0 would mean "no timeout" in net/http
+	for _, d := range []*time.Duration{&cfg.Server.ReadTimeout, &cfg.Server.ReadHeaderTimeout, &cfg.Server.IdleTimeout, &cfg.Server.WriteTimeout} {
+		if *d == 0 {
+			*d = 5 * time.Second
+		}
+	}
 	if cfg.R2.PresignTTL == 0 {
 		cfg.R2.PresignTTL = 15 * time.Minute
 	}
 	cfg.R2.PublicBaseURL = strings.TrimRight(cfg.R2.PublicBaseURL, "/")
+	cfg.Options.FrontendURL = strings.TrimRight(cfg.Options.FrontendURL, "/")
+	if len(cfg.Server.CORSOrigins) == 0 && cfg.Options.FrontendURL != "" {
+		cfg.Server.CORSOrigins = []string{cfg.Options.FrontendURL}
+	}
+
+	if cfg.Server.Env == "production" {
+		if err := checkProductionSecrets(&cfg); err != nil {
+			log.Fatalf("refusing to start in production: %v", err)
+		}
+	}
 
 	return &cfg
+}
+
+// envKey maps an environment variable name to a koanf config key.
+// Explicit names for what is usually set per deploy (secrets, URLs);
+// anything else is just lowercased (so `server.port=9090` works too).
+func envKey(s string) string {
+	switch s {
+	case "APP_POSTGRES_DSN":
+		return "postgres.dsn"
+	case "APP_STRIPE_SECRET_KEY":
+		return "stripe.secret_key"
+	case "APP_STRIPE_WEBHOOK_SECRET":
+		return "stripe.webhook_secret"
+	case "APP_JWT_SECRET_KEY":
+		return "jwt.secret_key"
+	case "APP_HMAC_SECRET_KEY":
+		return "refresh.hmac_secret"
+	case "APP_R2_ACCOUNT_ID":
+		return "r2.account_id"
+	case "APP_R2_ACCESS_ID_S3":
+		return "r2.access_key_id"
+	case "APP_R2_SECRET_ACCESS_KEY":
+		return "r2.secret_access_key"
+	case "APP_RECOVERY_CODE_HMAC_SECRET_KEY":
+		return "code.hmac_secret"
+	case "APP_SERVER_ENV":
+		return "server.env"
+	case "APP_SERVER_PORT":
+		return "server.port"
+	case "APP_CORS_ORIGINS":
+		return "server.cors_origins"
+	case "APP_TRUSTED_PROXIES":
+		return "server.trusted_proxies"
+	case "APP_FRONTEND_URL":
+		return "options.frontend_url"
+	case "APP_BASE_URL":
+		return "options.baseurl"
+	case "APP_R2_PUBLIC_BUCKET":
+		return "r2.public_bucket"
+	case "APP_R2_PRIVATE_BUCKET":
+		return "r2.private_bucket"
+	case "APP_R2_PUBLIC_BASE_URL":
+		return "r2.public_base_url"
+	default:
+		return strings.ToLower(s)
+	}
+}
+
+func splitList(v string) []string {
+	var out []string
+	for _, p := range strings.Split(v, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// checkProductionSecrets stops a prod start with missing or placeholder secrets:
+// a forgotten env var must not silently fall back to the dev value from config.yaml.
+func checkProductionSecrets(cfg *Config) error {
+	secrets := map[string]string{
+		"APP_JWT_SECRET_KEY":                cfg.JWT.Secret,
+		"APP_HMAC_SECRET_KEY":               cfg.Refresh.HMACSecret,
+		"APP_RECOVERY_CODE_HMAC_SECRET_KEY": cfg.Code.HMACSecret,
+	}
+	for name, v := range secrets {
+		if len(v) < 32 || strings.Contains(v, "supersecret") {
+			return fmt.Errorf("%s must be a random value of at least 32 chars (openssl rand -hex 32)", name)
+		}
+	}
+	if cfg.Options.FrontendURL == "" || strings.Contains(cfg.Options.FrontendURL, "localhost") {
+		return fmt.Errorf("APP_FRONTEND_URL must be the public frontend URL, got %q", cfg.Options.FrontendURL)
+	}
+	return nil
 }
 
 func findConfigFile() string {
