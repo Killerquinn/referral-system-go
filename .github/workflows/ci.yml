@@ -37,3 +37,28 @@ jobs:
 
     - name: Docker build
       run: docker build .
+  
+  publish:
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+     - uses: actions/checkout@v5
+     - name: Log in to GHCR
+       uses: docker/login-action@v3
+       with:
+         registry: ghcr.io
+         username: ${{ github.actor }}
+         password: ${{ secrets.GITHUB_TOKEN }}
+
+     - name: Build and Push
+       run: |
+          docker build \
+            -t ghcr.io/killerquinn/referral-backend:${{ github.sha }} \
+            -t ghcr.io/killerquinn/referral-backend:latest \
+            .
+          docker push ghcr.io/killerquinn/referral-backend:${{ github.sha }}
+          docker push ghcr.io/killerquinn/referral-backend:latest
