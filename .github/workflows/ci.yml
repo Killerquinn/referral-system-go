@@ -59,6 +59,7 @@ jobs:
           docker build \
             -t ghcr.io/killerquinn/referral-backend:${{ github.sha }} \
             -t ghcr.io/killerquinn/referral-backend:latest \
+            --label org.opencontainers.image.source=https://github.com/Killerquinn/referral-system-go \
             .
           docker push ghcr.io/killerquinn/referral-backend:${{ github.sha }}
           docker push ghcr.io/killerquinn/referral-backend:latest
