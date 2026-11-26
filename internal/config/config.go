@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -40,7 +41,7 @@ type ServerConfig struct {
 	// CIDRs of reverse proxies allowed to set X-Forwarded-For.
 	// Empty = no proxy in front, client IP is taken from the TCP connection.
 	TrustedProxies []string `koanf:"trusted_proxies"`
-	// Browser origins allowed to call the API (CORS). Empty = only options.frontend_url.
+	// Extra browser origins allowed to call the API (CORS); options.frontend_url is always allowed.
 	CORSOrigins []string `koanf:"cors_origins"`
 }
 
@@ -162,8 +163,11 @@ func LoadConfig() *Config {
 	}
 	cfg.R2.PublicBaseURL = strings.TrimRight(cfg.R2.PublicBaseURL, "/")
 	cfg.Options.FrontendURL = strings.TrimRight(cfg.Options.FrontendURL, "/")
-	if len(cfg.Server.CORSOrigins) == 0 && cfg.Options.FrontendURL != "" {
-		cfg.Server.CORSOrigins = []string{cfg.Options.FrontendURL}
+
+	// the frontend always calls its own API, so its origin is always allowed;
+	// cors_origins only adds extra origins on top of it
+	if cfg.Options.FrontendURL != "" && !slices.Contains(cfg.Server.CORSOrigins, cfg.Options.FrontendURL) {
+		cfg.Server.CORSOrigins = append([]string{cfg.Options.FrontendURL}, cfg.Server.CORSOrigins...)
 	}
 
 	if cfg.Server.Env == "production" {
